@@ -1,0 +1,16 @@
+export const colors = {
+  backgroundTop: '#08142A',
+  backgroundBottom: '#040A17',
+  backgroundCard: '#0B1424',
+  primary: '#54C2FF',
+  primaryStrong: '#3E8DFF',
+  primarySoft: 'rgba(84, 194, 255, 0.25)',
+  textStrong: '#F7FAFF',
+  textMuted: 'rgba(208, 223, 242, 0.62)',
+  textDim: 'rgba(208, 223, 242, 0.4)',
+  panel: 'rgba(255, 255, 255, 0.09)',
+  panelBorder: 'rgba(255, 255, 255, 0.12)',
+  buttonDark: '#111C30',
+  borderSoft: 'rgba(255, 255, 255, 0.08)',
+  success: '#59D187',
+} as const;
