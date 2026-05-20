@@ -48,7 +48,7 @@ const TabBarItem = ({ tab, isActive, onPress }: TabBarItemProps) => {
         <Ionicons
           name={tabIcons[tab]}
           size={moderateScale(22)}
-          color={isActive ? colors.primary : colors.textDim}
+          color={isActive ? colors.primaryStrong : colors.textDimOnLight}
           style={styles.tabIcon}
         />
       {/* </Animated.View> */}
@@ -100,18 +100,18 @@ const styles = StyleSheet.create({
     paddingVertical: verticalScale(10),
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: 'rgb(9, 18, 35)',
-    borderTopColor: 'rgba(122, 155, 204, 0.24)',
-    borderTopWidth: 2,
+    backgroundColor: colors.lightSurface,
+    borderTopColor: colors.lightBorder,
+    borderTopWidth: 1,
     borderBottomWidth: 0,
     borderLeftWidth: 0,
     borderRightWidth: 0,
     zIndex: 50,
-    elevation: 20,
+    elevation: 12,
     shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -4 },
   },
   tabItem: {
     alignItems: 'center',
@@ -123,11 +123,13 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(3),
   },
   tabLabel: {
-    color: colors.textDim,
+    color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
+    letterSpacing: 0.2,
+    fontWeight: 'semibold',
     fontSize: moderateScale(12, 0.2),
   },
   activeTab: {
-    color: colors.primary,
+    color: colors.primaryStrong,
   },
 });

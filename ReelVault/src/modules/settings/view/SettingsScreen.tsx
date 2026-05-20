@@ -19,6 +19,9 @@ import { colors } from '../../../common/theme/colors';
 import { moderateScale, scale, verticalScale } from '../../../common/utils/responsive';
 import { AppHeader } from '../../../common/widgets/AppHeader';
 import { GlassCard } from '../../../common/widgets/GlassCard';
+import { InstaGradientBackdrop } from '../../../common/widgets/InstaGradientBackdrop';
+import { AUTO_DOWNLOAD_STORAGE_KEY, setClipboardPasteDeclined } from '../../../common/storage/clipboardSettings';
+import { getAsyncStorageItems, setAsyncStorageItems } from '../../../common/storage/asyncStorage';
 import { useSettingsViewModel } from '../viewmodel/useSettingsViewModel';
 
 type SettingsScreenProps = {
@@ -104,7 +107,6 @@ const QUALITY_SELECTION_OPTIONS: QualitySelectionOption[] = [
 ];
 
 const STORAGE_LOCATION_STORAGE_KEY = 'reelvault.settings.storage_location';
-const AUTO_DOWNLOAD_STORAGE_KEY = 'reelvault.settings.auto_download';
 const QUALITY_SELECTION_STORAGE_KEY = 'reelvault.settings.quality_selection';
 
 type FirestoreLite = {
@@ -124,23 +126,20 @@ type FirestoreLite = {
   };
 };
 
-type StorageLike = {
-  getItem: (key: string) => Promise<string | null>;
-  setItem: (key: string, value: string) => Promise<void>;
+type PersistedSettings = {
+  storageLocation: StorageLocationValue;
+  autoDownload: boolean;
+  qualitySelection: QualitySelectionValue;
 };
 
-const getStorage = (): StorageLike | null => {
-  try {
-    const asyncStorageModule = require('@react-native-async-storage/async-storage');
-    const storage = asyncStorageModule?.default ?? asyncStorageModule;
-    if (storage?.getItem && storage?.setItem) {
-      return storage as StorageLike;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
+const settingsEqual = (left: PersistedSettings | null, right: PersistedSettings | null) =>
+  Boolean(
+    left &&
+      right &&
+      left.storageLocation === right.storageLocation &&
+      left.autoDownload === right.autoDownload &&
+      left.qualitySelection === right.qualitySelection,
+  );
 
 const getFirestore = (): FirestoreLite | null => {
   try {
@@ -209,15 +208,13 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
   const [showStorageModal, setShowStorageModal] = React.useState(false);
   const [showQualityModal, setShowQualityModal] = React.useState(false);
   const [selectedStorageLocation, setSelectedStorageLocation] = React.useState<StorageLocationValue>('internal');
-  const [autoDownloadEnabled, setAutoDownloadEnabled] = React.useState(true);
+  const [autoDownloadEnabled, setAutoDownloadEnabled] = React.useState(false);
   const [selectedQuality, setSelectedQuality] = React.useState<QualitySelectionValue>('ask');
   const [storageReady, setStorageReady] = React.useState(false);
   const applyingRemoteSettingsRef = useRef(false);
-  const lastSyncedSettingsRef = useRef<{
-    storageLocation: StorageLocationValue;
-    autoDownload: boolean;
-    qualitySelection: QualitySelectionValue;
-  } | null>(null);
+  const skipFirestoreEchoRef = useRef(false);
+  const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSyncedSettingsRef = useRef<PersistedSettings | null>(null);
   const screenOpacity = useRef(new Animated.Value(0)).current;
   const screenTranslateY = useRef(new Animated.Value(16)).current;
   const cardAnims = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
@@ -282,31 +279,37 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
-    const storage = getStorage();
+
     const hydrateFromLocal = async () => {
-      const localValue = await storage?.getItem(STORAGE_LOCATION_STORAGE_KEY);
+      const localValues = await getAsyncStorageItems([
+        STORAGE_LOCATION_STORAGE_KEY,
+        AUTO_DOWNLOAD_STORAGE_KEY,
+        QUALITY_SELECTION_STORAGE_KEY,
+      ]);
+      const localValue = localValues[STORAGE_LOCATION_STORAGE_KEY];
       let nextStorage: StorageLocationValue = 'internal';
       if (localValue === 'internal' || localValue === 'app' || localValue === 'ask') {
         nextStorage = localValue;
       }
-      const localAutoDownload = await storage?.getItem(AUTO_DOWNLOAD_STORAGE_KEY);
-      let nextAutoDownload = true;
+      const localAutoDownload = localValues[AUTO_DOWNLOAD_STORAGE_KEY];
+      let nextAutoDownload = false;
       if (localAutoDownload === 'true' || localAutoDownload === 'false') {
         nextAutoDownload = localAutoDownload === 'true';
       }
-      const localQualitySelection = await storage?.getItem(QUALITY_SELECTION_STORAGE_KEY);
+      const localQualitySelection = localValues[QUALITY_SELECTION_STORAGE_KEY];
       let nextQualitySelection: QualitySelectionValue = 'ask';
       if (localQualitySelection === 'ask' || localQualitySelection === 'best' || localQualitySelection === 'high' || localQualitySelection === 'dataSaver') {
         nextQualitySelection = localQualitySelection;
       }
-      setSelectedStorageLocation(nextStorage);
-      setAutoDownloadEnabled(nextAutoDownload);
-      setSelectedQuality(nextQualitySelection);
-      lastSyncedSettingsRef.current = {
+      const hydrated: PersistedSettings = {
         storageLocation: nextStorage,
         autoDownload: nextAutoDownload,
         qualitySelection: nextQualitySelection,
       };
+      setSelectedStorageLocation(hydrated.storageLocation);
+      setAutoDownloadEnabled(hydrated.autoDownload);
+      setSelectedQuality(hydrated.qualitySelection);
+      lastSyncedSettingsRef.current = hydrated;
       setStorageReady(true);
     };
 
@@ -331,17 +334,16 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
           const cloudValue = settings.storageLocation;
           const cloudAutoDownload = settings.autoDownload;
           const cloudQualitySelection = settings.qualitySelection;
+          const previous = lastSyncedSettingsRef.current;
           let nextStorage: StorageLocationValue | null = null;
           let nextAutoDownload: boolean | null = null;
           let nextQualitySelection: QualitySelectionValue | null = null;
 
           if (cloudValue === 'internal' || cloudValue === 'app' || cloudValue === 'ask') {
             nextStorage = cloudValue;
-            await storage?.setItem(STORAGE_LOCATION_STORAGE_KEY, cloudValue);
           }
           if (typeof cloudAutoDownload === 'boolean') {
             nextAutoDownload = cloudAutoDownload;
-            await storage?.setItem(AUTO_DOWNLOAD_STORAGE_KEY, String(cloudAutoDownload));
           }
           if (
             cloudQualitySelection === 'ask' ||
@@ -350,7 +352,6 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
             cloudQualitySelection === 'dataSaver'
           ) {
             nextQualitySelection = cloudQualitySelection;
-            await storage?.setItem(QUALITY_SELECTION_STORAGE_KEY, cloudQualitySelection);
           }
           if (
             !(cloudValue === 'internal' || cloudValue === 'app' || cloudValue === 'ask') &&
@@ -366,26 +367,43 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
             return;
           }
 
-          applyingRemoteSettingsRef.current = true;
-          if (nextStorage) {
-            setSelectedStorageLocation(nextStorage);
-          }
-          if (typeof nextAutoDownload === 'boolean') {
-            setAutoDownloadEnabled(nextAutoDownload);
-          }
-          if (nextQualitySelection) {
-            setSelectedQuality(nextQualitySelection);
-          }
-          const previous = lastSyncedSettingsRef.current;
-          lastSyncedSettingsRef.current = {
+          const merged: PersistedSettings = {
             storageLocation: nextStorage ?? previous?.storageLocation ?? 'internal',
-            autoDownload: typeof nextAutoDownload === 'boolean' ? nextAutoDownload : previous?.autoDownload ?? true,
+            autoDownload: typeof nextAutoDownload === 'boolean' ? nextAutoDownload : previous?.autoDownload ?? false,
             qualitySelection: nextQualitySelection ?? previous?.qualitySelection ?? 'ask',
           };
+
+          if (skipFirestoreEchoRef.current && settingsEqual(previous, merged)) {
+            skipFirestoreEchoRef.current = false;
+            return;
+          }
+          skipFirestoreEchoRef.current = false;
+
+          const localWrites: [string, string][] = [];
+          if (!settingsEqual(previous, merged)) {
+            if (merged.storageLocation !== previous?.storageLocation) {
+              localWrites.push([STORAGE_LOCATION_STORAGE_KEY, merged.storageLocation]);
+            }
+            if (merged.autoDownload !== previous?.autoDownload) {
+              localWrites.push([AUTO_DOWNLOAD_STORAGE_KEY, String(merged.autoDownload)]);
+            }
+            if (merged.qualitySelection !== previous?.qualitySelection) {
+              localWrites.push([QUALITY_SELECTION_STORAGE_KEY, merged.qualitySelection]);
+            }
+          }
+          if (localWrites.length) {
+            await setAsyncStorageItems(localWrites);
+          }
+
+          applyingRemoteSettingsRef.current = true;
+          lastSyncedSettingsRef.current = merged;
+          if (!settingsEqual(previous, merged)) {
+            setSelectedStorageLocation(merged.storageLocation);
+            setAutoDownloadEnabled(merged.autoDownload);
+            setSelectedQuality(merged.qualitySelection);
+          }
           setStorageReady(true);
-          setTimeout(() => {
-            applyingRemoteSettingsRef.current = false;
-          }, 0);
+          applyingRemoteSettingsRef.current = false;
         },
         async () => {
           await hydrateFromLocal();
@@ -400,73 +418,89 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
   }, [authVm.user?.uid]);
 
   useEffect(() => {
-    if (!storageReady) {
-      return;
-    }
-    if (applyingRemoteSettingsRef.current) {
+    if (!storageReady || applyingRemoteSettingsRef.current) {
       return;
     }
 
-    const nextSettings = {
+    const nextSettings: PersistedSettings = {
       storageLocation: selectedStorageLocation,
       autoDownload: autoDownloadEnabled,
       qualitySelection: selectedQuality,
     };
     const previous = lastSyncedSettingsRef.current;
-    if (
-      previous &&
-      previous.storageLocation === nextSettings.storageLocation &&
-      previous.autoDownload === nextSettings.autoDownload &&
-      previous.qualitySelection === nextSettings.qualitySelection
-    ) {
+    if (settingsEqual(previous, nextSettings)) {
       return;
     }
 
-    const storage = getStorage();
-    storage?.setItem(STORAGE_LOCATION_STORAGE_KEY, nextSettings.storageLocation).catch(() => undefined);
-    storage?.setItem(AUTO_DOWNLOAD_STORAGE_KEY, String(nextSettings.autoDownload)).catch(() => undefined);
-    storage?.setItem(QUALITY_SELECTION_STORAGE_KEY, nextSettings.qualitySelection).catch(() => undefined);
+    if (persistTimeoutRef.current) {
+      clearTimeout(persistTimeoutRef.current);
+    }
 
-    if (!authVm.user?.uid) {
+    persistTimeoutRef.current = setTimeout(() => {
+      const localWrites: [string, string][] = [];
+      if (nextSettings.storageLocation !== previous?.storageLocation) {
+        localWrites.push([STORAGE_LOCATION_STORAGE_KEY, nextSettings.storageLocation]);
+      }
+      if (nextSettings.autoDownload !== previous?.autoDownload) {
+        localWrites.push([AUTO_DOWNLOAD_STORAGE_KEY, String(nextSettings.autoDownload)]);
+      }
+      if (nextSettings.qualitySelection !== previous?.qualitySelection) {
+        localWrites.push([QUALITY_SELECTION_STORAGE_KEY, nextSettings.qualitySelection]);
+      }
+      if (localWrites.length) {
+        setAsyncStorageItems(localWrites).catch(() => undefined);
+      }
+
       lastSyncedSettingsRef.current = nextSettings;
-      return;
-    }
-    const firestore = getFirestore();
-    if (!firestore) {
-      lastSyncedSettingsRef.current = nextSettings;
-      return;
-    }
-    lastSyncedSettingsRef.current = nextSettings;
-    firestore()
-      .collection('users')
-      .doc(authVm.user.uid)
-      .set(
-        {
-          settings: {
-            storageLocation: nextSettings.storageLocation,
-            autoDownload: nextSettings.autoDownload,
-            qualitySelection: nextSettings.qualitySelection,
-            updatedAt: firestore.FieldValue.serverTimestamp(),
+
+      if (!authVm.user?.uid) {
+        return;
+      }
+      const firestore = getFirestore();
+      if (!firestore) {
+        return;
+      }
+
+      skipFirestoreEchoRef.current = true;
+      firestore()
+        .collection('users')
+        .doc(authVm.user.uid)
+        .set(
+          {
+            settings: {
+              storageLocation: nextSettings.storageLocation,
+              autoDownload: nextSettings.autoDownload,
+              qualitySelection: nextSettings.qualitySelection,
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
           },
-        },
-        { merge: true },
-      )
-      .catch(() => undefined);
+          { merge: true },
+        )
+        .catch(() => {
+          skipFirestoreEchoRef.current = false;
+        });
+    }, 350);
+
+    return () => {
+      if (persistTimeoutRef.current) {
+        clearTimeout(persistTimeoutRef.current);
+      }
+    };
   }, [selectedStorageLocation, autoDownloadEnabled, selectedQuality, authVm.user?.uid, storageReady]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-      <View style={[styles.glow, styles.glowTop]} />
-      <View style={[styles.glow, styles.glowBottom]} />
+      <StatusBar barStyle="dark-content" />
+      <InstaGradientBackdrop variant="light" />
 
       <Animated.ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        style={{ opacity: screenOpacity, transform: [{ translateY: screenTranslateY }] }}
+        style={{ zIndex: 1, opacity: screenOpacity, transform: [{ translateY: screenTranslateY }] }}
       >
         <AppHeader
           title="Settings"
+          tone="light"
           showBack={Boolean(onGoBack)}
           onBack={onGoBack}
           right={
@@ -487,7 +521,7 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
                     ) : null}
                   </>
                 ) : (
-                  <Ionicons name="person" size={moderateScale(20)} color={colors.textStrong} />
+                  <Ionicons name="person" size={moderateScale(20)} color={colors.textOnLight} />
                 )}
               </TouchableOpacity>
             </View>
@@ -509,7 +543,7 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
                   title={authVm.user?.displayName || vm.accountOptions[0].title}
                   subtitle={authVm.user?.email || vm.accountOptions[0].subtitle}
                   isPro={subscriptionVm.isPro}
-                  right={<Ionicons name="chevron-forward" size={moderateScale(17)} color={colors.textDim} />}
+                  right={<Ionicons name="chevron-forward" size={moderateScale(17)} color={colors.textDimOnLight} />}
                   onPress={onOpenProfileEdit}
                 />
                 <View style={styles.rowDivider} />
@@ -559,21 +593,28 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
               icon="folder"
               title="Storage Location"
               subtitle={selectedStorageLabel}
-              right={<Ionicons name="chevron-forward" size={moderateScale(17)} color={colors.textDim} />}
+              right={<Ionicons name="chevron-forward" size={moderateScale(17)} color={colors.textDimOnLight} />}
               onPress={() => setShowStorageModal(true)}
             />
             <View style={styles.rowDivider} />
             <SettingRow
               icon="sync"
               title="Auto-download"
-              subtitle="Download links in clipboard"
+              subtitle="Detect links copied to clipboard"
               right={
                 <Switch
                   value={autoDownloadEnabled}
-                  onValueChange={setAutoDownloadEnabled}
-                  trackColor={{ false: '#3a4861', true: colors.primaryStrong }}
-                  thumbColor="#f5f9ff"
-                  ios_backgroundColor="#3a4861"
+                  onValueChange={enabled => {
+                    setAutoDownloadEnabled(enabled);
+                    if (enabled) {
+                      setClipboardPasteDeclined(false).catch(() => undefined);
+                    } else {
+                      setClipboardPasteDeclined(true).catch(() => undefined);
+                    }
+                  }}
+                  trackColor={{ false: '#E8E8E8', true: colors.primaryStrong }}
+                  thumbColor="#FFFFFF"
+                  ios_backgroundColor="#E8E8E8"
                 />
               }
             />
@@ -582,7 +623,7 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
               icon="options"
               title="Quality Selection"
               subtitle={selectedQualityLabel}
-              right={<Ionicons name="chevron-forward" size={moderateScale(17)} color={colors.textDim} />}
+              right={<Ionicons name="chevron-forward" size={moderateScale(17)} color={colors.textDimOnLight} />}
               onPress={() => setShowQualityModal(true)}
             />
           </GlassCard>
@@ -601,7 +642,7 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
               icon="shield-checkmark"
               title="Privacy Policy"
               subtitle=""
-              right={<Ionicons name="open-outline" size={moderateScale(17)} color={colors.textDim} />}
+              right={<Ionicons name="open-outline" size={moderateScale(17)} color={colors.textDimOnLight} />}
             />
             <View style={styles.rowDivider} />
             <SettingRow icon="information-circle" title="Version" subtitle="1.0.2 Stable Build" />
@@ -671,7 +712,7 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
                     <Ionicons
                       name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
                       size={moderateScale(18)}
-                      color={isSelected ? colors.primaryStrong : colors.textDim}
+                      color={isSelected ? colors.primaryStrong : colors.textDimOnLight}
                     />
                   </TouchableOpacity>
                 );
@@ -716,7 +757,7 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
                     <Ionicons
                       name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
                       size={moderateScale(18)}
-                      color={isSelected ? colors.primaryStrong : colors.textDim}
+                      color={isSelected ? colors.primaryStrong : colors.textDimOnLight}
                     />
                   </TouchableOpacity>
                 );
@@ -738,23 +779,8 @@ export const SettingsScreen = ({ onGoBack, onOpenAuth, onOpenSubscription, onOpe
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundBottom,
-  },
-  glow: {
-    position: 'absolute',
-    width: scale(320),
-    height: scale(320),
-    borderRadius: 999,
-    backgroundColor: '#12315F',
-    opacity: 0.12,
-  },
-  glowTop: {
-    top: -scale(140),
-    left: -scale(70),
-  },
-  glowBottom: {
-    bottom: -scale(180),
-    right: -scale(70),
+    backgroundColor: colors.lightCanvas,
+    overflow: 'hidden',
   },
   content: {
     paddingHorizontal: scale(18),
@@ -788,7 +814,7 @@ const styles = StyleSheet.create({
     width: scale(34),
   },
   headerTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(24, 0.3),
   },
@@ -798,14 +824,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.panel,
+    backgroundColor: colors.lightSurfaceMuted,
     borderWidth: 1,
-    borderColor: colors.borderSoft,
+    borderColor: colors.lightBorderStrong,
     position: 'relative',
     overflow: 'visible',
   },
   avatarInitials: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -829,17 +855,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(8),
     paddingVertical: verticalScale(4),
     borderRadius: 999,
-    backgroundColor: 'rgba(62, 141, 255, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(155, 206, 255, 0.5)',
+    borderColor: 'rgba(225, 48, 108, 0.28)',
   },
   proHeaderBadgeText: {
-    color: '#E9F6FF',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(11, 0.2),
   },
   sectionTitle: {
-    color: colors.textDim,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
     marginBottom: verticalScale(8),
@@ -851,7 +877,14 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(16),
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(4),
-    backgroundColor: 'rgba(24, 36, 58, 0.72)',
+    backgroundColor: colors.lightSurface,
+    borderWidth: 1,
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   authBlock: {
     paddingVertical: verticalScale(8),
@@ -864,18 +897,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
     marginBottom: verticalScale(10),
-    backgroundColor: 'rgba(56, 101, 169, 0.25)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(139, 179, 238, 0.32)',
+    borderColor: colors.lightBorder,
   },
   authTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.2),
     textAlign: 'center',
   },
   authSub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     textAlign: 'center',
@@ -884,13 +917,13 @@ const styles = StyleSheet.create({
     lineHeight: moderateScale(18, 0.2),
   },
   authInput: {
-    backgroundColor: 'rgba(18, 30, 50, 0.9)',
+    backgroundColor: colors.inputSurfaceLight,
     borderWidth: 1,
-    borderColor: 'rgba(117, 154, 204, 0.2)',
+    borderColor: colors.lightBorderStrong,
     borderRadius: 12,
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(11),
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.medium,
     marginBottom: verticalScale(9),
   },
@@ -901,7 +934,7 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(8),
   },
   editHint: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     marginBottom: verticalScale(10),
@@ -924,17 +957,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryStrong,
   },
   authSecondary: {
-    backgroundColor: 'rgba(55, 72, 101, 0.45)',
+    backgroundColor: colors.lightSurfaceMuted,
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.25)',
+    borderColor: colors.lightBorderStrong,
   },
   authPrimaryText: {
-    color: '#F6FAFF',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(14, 0.2),
   },
   authSecondaryText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -949,32 +982,32 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(44, 76, 120, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     marginRight: scale(10),
   },
   rowMeta: {
     flex: 1,
   },
   rowTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(16, 0.2),
   },
   rowSub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(13, 0.2),
     marginTop: verticalScale(2),
   },
   rowDivider: {
     height: 1,
-    backgroundColor: colors.borderSoft,
+    backgroundColor: colors.lightBorder,
   },
   themePill: {
     flexDirection: 'row',
     padding: scale(4),
     borderRadius: 999,
-    backgroundColor: 'rgba(18, 28, 45, 0.95)',
+    backgroundColor: colors.lightSurfaceMuted,
     gap: scale(4),
   },
   themeChip: {
@@ -986,12 +1019,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryStrong,
   },
   themeChipText: {
-    color: colors.textDim,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
   themeChipTextActive: {
-    color: '#f4f8ff',
+    color: '#FFFFFF',
   },
   accentRow: {
     flexDirection: 'row',
@@ -1008,17 +1041,17 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
   },
   logoutText: {
-    color: '#F6FAFF',
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   loginText: {
-    color: '#EAF6FF',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
   },
   myPlanText: {
-    color: '#EAF6FF',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
   },
@@ -1034,9 +1067,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(155, 206, 255, 0.45)',
+    borderColor: 'rgba(225, 48, 108, 0.25)',
   },
   logoutButton: {
     marginTop: verticalScale(10),
@@ -1044,9 +1077,9 @@ const styles = StyleSheet.create({
     minHeight: verticalScale(42),
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(155, 206, 255, 0.45)',
+    borderColor: 'rgba(225, 48, 108, 0.25)',
   },
   accountFooterLinks: {
     marginTop: verticalScale(8),
@@ -1057,7 +1090,7 @@ const styles = StyleSheet.create({
     gap: scale(10),
   },
   footerLinkText: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -1067,7 +1100,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(13, 0.2),
   },
   footerLinkDivider: {
-    color: colors.textDim,
+    color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(13, 0.2),
   },
@@ -1080,7 +1113,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.72)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(18),
@@ -1090,18 +1123,23 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: scale(16),
     paddingVertical: verticalScale(16),
-    backgroundColor: 'rgba(16, 28, 48, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(123, 166, 232, 0.28)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   modalTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.2),
     marginBottom: verticalScale(6),
   },
   modalDescription: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(13, 0.2),
     lineHeight: moderateScale(18, 0.2),
@@ -1118,8 +1156,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.28)',
-    backgroundColor: 'rgba(55, 72, 101, 0.35)',
+    borderColor: colors.lightBorderStrong,
+    backgroundColor: colors.lightSurfaceMuted,
   },
   modalConfirmButton: {
     flex: 1,
@@ -1127,15 +1165,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.85)',
+    backgroundColor: colors.primaryStrong,
   },
   modalCancelText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   modalConfirmText: {
-    color: '#F6FAFF',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -1151,12 +1189,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
     paddingTop: verticalScale(16),
     paddingBottom: verticalScale(14),
-    backgroundColor: 'rgba(16, 28, 48, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(123, 166, 232, 0.28)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   storageCloudHint: {
-    color: colors.primary,
+    color: colors.primaryStrong,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(11, 0.2),
     marginTop: verticalScale(4),
@@ -1166,27 +1209,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(10),
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.22)',
-    backgroundColor: 'rgba(55, 72, 101, 0.25)',
+    borderColor: colors.lightBorder,
+    backgroundColor: colors.lightSurfaceMuted,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   storageOptionActive: {
-    borderColor: 'rgba(155, 206, 255, 0.5)',
-    backgroundColor: 'rgba(62, 141, 255, 0.22)',
+    borderColor: colors.primaryStrong,
+    backgroundColor: 'rgba(225, 48, 108, 0.08)',
   },
   storageOptionMeta: {
     flex: 1,
     paddingRight: scale(8),
   },
   storageOptionTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   storageOptionSubtitle: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     marginTop: verticalScale(2),
@@ -1202,12 +1245,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.28)',
-    backgroundColor: 'rgba(55, 72, 101, 0.35)',
+    borderColor: colors.lightBorderStrong,
+    backgroundColor: colors.lightSurfaceMuted,
     width: '100%',
   },
   storageCloseText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },

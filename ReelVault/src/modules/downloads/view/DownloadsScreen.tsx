@@ -6,7 +6,6 @@ import {
   Linking,
   Modal,
   Platform,
-  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -24,11 +23,10 @@ import { removeSavedDownload } from '../../../common/storage/downloadHistory';
 import { colors } from '../../../common/theme/colors';
 import { moderateScale, scale, verticalScale } from '../../../common/utils/responsive';
 import { GlassCard } from '../../../common/widgets/GlassCard';
+import { InstaGradientBackdrop } from '../../../common/widgets/InstaGradientBackdrop';
 import { AppHeader } from '../../../common/widgets/AppHeader';
+import { shareAppPromo } from '../../../common/utils/shareApp';
 import { useDownloadsViewModel } from '../viewmodel/useDownloadsViewModel';
-
-const APP_PROMO_MESSAGE =
-  'I am using ReelVault to save videos from Instagram, Facebook, and YouTube with one tap. Try ReelVault for fast downloads and premium history sync.';
 
 export const DownloadsScreen = () => {
   const vm = useDownloadsViewModel();
@@ -59,7 +57,7 @@ export const DownloadsScreen = () => {
   useFocusEffect(
     React.useCallback(() => {
       vm.reloadHistory?.();
-    }, [vm]),
+    }, [vm.reloadHistory]),
   );
 
   const downloadToFilesAndGallery = async (item: NonNullable<typeof selectedItem>) => {
@@ -104,11 +102,7 @@ export const DownloadsScreen = () => {
   };
 
   const onShareItem = async () => {
-    await Share.share(
-      Platform.OS === 'ios'
-        ? { message: APP_PROMO_MESSAGE }
-        : { message: APP_PROMO_MESSAGE },
-    );
+    await shareAppPromo();
   };
 
   const onDownloadAgain = async () => {
@@ -140,16 +134,15 @@ export const DownloadsScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-      <View style={[styles.glow, styles.glowTop]} />
-      <View style={[styles.glow, styles.glowBottom]} />
+      <StatusBar barStyle="dark-content" />
+      <InstaGradientBackdrop variant="light" />
 
       <Animated.ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        style={{ opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }}
+        style={{ zIndex: 1, opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }}
       >
-        <AppHeader title="Downloads" />
+        <AppHeader title="Downloads" tone="light" />
         <Text style={styles.sectionLabel}>DOWNLOAD HISTORY</Text>
 
         {vm.completedDownloads.length === 0 ? (
@@ -170,14 +163,14 @@ export const DownloadsScreen = () => {
               <TouchableOpacity activeOpacity={0.85} onPress={() => onOpenSourceUrl(item.sourceUrl)}>
                 <ImageBackground source={{ uri: item.thumbnail }} style={styles.thumbnail} imageStyle={styles.thumbImage}>
                   <View style={styles.playButton}>
-                    <Ionicons name="play" size={moderateScale(20)} color="#EAF3FF" />
+                    <Ionicons name="play" size={moderateScale(20)} color="#FFFFFF" />
                   </View>
                 </ImageBackground>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity activeOpacity={0.85} onPress={() => onOpenSourceUrl(item.sourceUrl)}>
                 <View style={[styles.thumbnail, styles.thumbnailFallback]}>
-                  <Ionicons name="film-outline" size={moderateScale(24)} color={colors.textStrong} />
+                  <Ionicons name="film-outline" size={moderateScale(24)} color={colors.textDimOnLight} />
                 </View>
               </TouchableOpacity>
             )}
@@ -186,18 +179,14 @@ export const DownloadsScreen = () => {
                 {item.title}
               </Text>
               <View style={styles.sourceRow}>
-                <MaterialDesignIcons name="record-circle-outline" size={moderateScale(13)} color={colors.textDim} />
+                <MaterialDesignIcons name="record-circle-outline" size={moderateScale(13)} color={colors.textDimOnLight} />
                 <Text style={styles.cardSub}>
                   {item.source} • {item.size}
                 </Text>
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={async () => {
-                    await Share.share(
-                      Platform.OS === 'ios'
-                        ? { message: APP_PROMO_MESSAGE }
-                        : { message: APP_PROMO_MESSAGE },
-                    );
+                    await shareAppPromo();
                   }}
                   style={styles.shareAction}
                 >
@@ -205,7 +194,7 @@ export const DownloadsScreen = () => {
               </View>
             </View>
             <TouchableOpacity style={styles.menuButton} activeOpacity={0.8} onPress={() => setSelectedItemId(item.id)}>
-              <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={colors.textMuted} />
+              <Ionicons name="ellipsis-vertical" size={moderateScale(16)} color={colors.textDimOnLight} />
             </TouchableOpacity>
           </GlassCard>
         ))}
@@ -215,19 +204,19 @@ export const DownloadsScreen = () => {
         <View style={styles.modalOverlay}>
           <GlassCard style={styles.modalCard}>
             <View style={styles.modalTitleWrap}>
-              <Ionicons name={selectedItem?.source === 'Instagram' ? 'logo-instagram' : selectedItem?.source === 'Facebook' ? 'logo-facebook' : selectedItem?.source === 'YouTube' ? 'logo-youtube' : 'download-outline'} size={moderateScale(18)} color="white" />
+              <Ionicons name={selectedItem?.source === 'Instagram' ? 'logo-instagram' : selectedItem?.source === 'Facebook' ? 'logo-facebook' : selectedItem?.source === 'YouTube' ? 'logo-youtube' : 'download-outline'} size={moderateScale(18)} color={colors.primaryStrong} />
               <Text style={styles.modalTitle}>{selectedItem?.title || 'Unknown Title'}</Text>
             </View>
             <TouchableOpacity activeOpacity={0.85} style={styles.modalAction} onPress={onShareItem} disabled={actionLoading}>
-              <Ionicons name="share-social-outline" size={moderateScale(18)} color={colors.textStrong} />
+              <Ionicons name="share-social-outline" size={moderateScale(18)} color={colors.textOnLight} />
               <Text style={styles.modalActionText}>Share</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.85} style={styles.modalAction} onPress={onDownloadAgain} disabled={actionLoading}>
-              <Ionicons name="download-outline" size={moderateScale(18)} color={colors.textStrong} />
+              <Ionicons name="download-outline" size={moderateScale(18)} color={colors.textOnLight} />
               <Text style={styles.modalActionText}>{actionLoading ? 'Please wait...' : 'Save to Gallery & Files'}</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.85} style={[styles.modalAction, styles.modalDeleteAction]} onPress={onDeleteItem} disabled={actionLoading}>
-              <Ionicons name="trash-outline" size={moderateScale(18)} color="#FFB3B3" />
+              <Ionicons name="trash-outline" size={moderateScale(18)} color={colors.primaryStrong} />
               <Text style={styles.modalDeleteText}>Delete from History</Text>
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.85} style={styles.modalCloseButton} onPress={() => setSelectedItemId(null)}>
@@ -241,7 +230,7 @@ export const DownloadsScreen = () => {
         <View style={styles.successOverlay}>
           <View style={styles.successCard}>
             <View style={styles.successIconWrap}>
-              <Ionicons name="checkmark" size={moderateScale(30)} color="#E9F8FF" />
+              <Ionicons name="checkmark" size={moderateScale(30)} color="#FFFFFF" />
             </View>
             <Text style={styles.successTitle}>Saved Successfully</Text>
             <Text style={styles.successSubtitle}>{successMessage}</Text>
@@ -259,55 +248,17 @@ export const DownloadsScreen = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundBottom,
-  },
-  glow: {
-    position: 'absolute',
-    width: scale(330),
-    height: scale(330),
-    borderRadius: 999,
-    backgroundColor: '#133B78',
-    opacity: 0.2,
-  },
-  glowTop: {
-    top: -scale(150),
-    left: -scale(60),
-  },
-  glowBottom: {
-    bottom: -scale(180),
-    right: -scale(70),
+    backgroundColor: colors.lightCanvas,
+    overflow: 'hidden',
   },
   content: {
     marginHorizontal: scale(18),
     marginTop: verticalScale(10),
     paddingBottom: verticalScale(55),
   },
-  
-  avatar: {
-    width: scale(42),
-    height: scale(42),
-    borderRadius: 999,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  screenTitle: {
-    color: colors.textStrong,
-    fontFamily: fontFamily.heavy,
-    fontSize: moderateScale(42, 0.35),
-    marginBottom: verticalScale(12),
-  },
-  sectionHeader: {
-    marginBottom: verticalScale(10),
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   sectionLabel: {
-    color: colors.textDim,
-    fontFamily: fontFamily.medium,
+    color: colors.textMutedOnLight,
+    fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
     letterSpacing: 1.2,
     marginBottom: verticalScale(10),
@@ -318,9 +269,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(16),
     marginBottom: verticalScale(16),
     alignItems: 'center',
-    backgroundColor: 'rgba(24, 38, 62, 0.72)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(121, 168, 235, 0.26)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   emptyIconWrap: {
     width: scale(56),
@@ -329,18 +285,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: verticalScale(10),
-    backgroundColor: 'rgba(62, 141, 255, 0.18)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(151, 199, 255, 0.4)',
+    borderColor: 'rgba(225, 48, 108, 0.2)',
   },
   emptyTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(17, 0.2),
     marginBottom: verticalScale(6),
   },
   emptySub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(18, 0.2),
@@ -350,7 +306,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
     marginBottom: verticalScale(14),
-    backgroundColor: 'rgba(19, 28, 47, 0.8)',
+    backgroundColor: colors.lightSurface,
+    borderWidth: 1,
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   thumbnail: {
     height: verticalScale(185),
@@ -358,7 +321,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   thumbnailFallback: {
-    backgroundColor: 'rgba(33, 52, 84, 0.55)',
+    backgroundColor: colors.inputSurfaceLight,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
   },
@@ -372,7 +335,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.75)',
+    backgroundColor: 'rgba(225, 48, 108, 0.85)',
   },
   cardMeta: {
     paddingHorizontal: scale(12),
@@ -380,7 +343,7 @@ const styles = StyleSheet.create({
     paddingBottom: verticalScale(14),
   },
   cardTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.24),
     marginBottom: verticalScale(6),
@@ -395,7 +358,7 @@ const styles = StyleSheet.create({
     padding: scale(4),
   },
   cardSub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(13, 0.2),
   },
@@ -407,7 +370,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.72)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(18),
@@ -417,9 +380,14 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(14),
-    backgroundColor: 'rgba(16, 28, 48, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(123, 166, 232, 0.28)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   modalTitleWrap: {
     flexDirection: 'row',
@@ -428,10 +396,9 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(10),
   },
   modalTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(16, 0.2),
-    // marginBottom: verticalScale(10),
   },
   modalAction: {
     borderRadius: 12,
@@ -439,23 +406,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(12),
     marginBottom: verticalScale(8),
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.24)',
-    backgroundColor: 'rgba(55, 72, 101, 0.28)',
+    borderColor: colors.lightBorder,
+    backgroundColor: colors.lightSurfaceMuted,
     flexDirection: 'row',
     alignItems: 'center',
     gap: scale(8),
   },
   modalActionText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   modalDeleteAction: {
-    borderColor: 'rgba(255, 138, 138, 0.35)',
-    backgroundColor: 'rgba(83, 26, 37, 0.35)',
+    borderColor: 'rgba(225, 48, 108, 0.28)',
+    backgroundColor: 'rgba(225, 48, 108, 0.08)',
   },
   modalDeleteText: {
-    color: '#FFB3B3',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -466,17 +433,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.28)',
-    backgroundColor: 'rgba(55, 72, 101, 0.35)',
+    borderColor: colors.lightBorderStrong,
+    backgroundColor: colors.lightSurfaceMuted,
   },
   modalCloseText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   successOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.78)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(22),
@@ -487,9 +454,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(20),
     paddingVertical: verticalScale(22),
     alignItems: 'center',
-    backgroundColor: 'rgba(12, 24, 42, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(126, 170, 238, 0.32)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   successIconWrap: {
     width: scale(74),
@@ -497,20 +469,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(39, 173, 117, 0.45)',
-    borderWidth: 1,
-    borderColor: 'rgba(171, 242, 210, 0.56)',
+    backgroundColor: colors.success,
+    borderWidth: 0,
   },
   successTitle: {
     marginTop: verticalScale(12),
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(19, 0.2),
     textAlign: 'center',
   },
   successSubtitle: {
     marginTop: verticalScale(8),
-    color: '#D8E6FA',
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(13, 0.2),
     lineHeight: moderateScale(19, 0.2),
@@ -518,7 +489,7 @@ const styles = StyleSheet.create({
   },
   successHint: {
     marginTop: verticalScale(6),
-    color: colors.textMuted,
+    color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     textAlign: 'center',
@@ -533,16 +504,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryStrong,
   },
   successButtonText: {
-    color: '#0A1C33',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(14, 0.2),
-  },
-  bottomOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: verticalScale(90),
-    backgroundColor: 'rgba(4, 10, 23, 0.92)',
   },
 });

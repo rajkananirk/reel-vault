@@ -2,7 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AppTab } from '../common/constants/app';
-import { useFirebaseAuth } from '../common/firebase/useFirebaseAuth';
+import { useAppDeepLink } from '../common/hooks/useAppDeepLink';
+import {
+  hasCompletedSplashOnboarding,
+  markSplashOnboardingComplete,
+} from '../common/storage/splashOnboarding';
+import { FirebaseAuthProvider, useFirebaseAuth } from '../common/firebase/useFirebaseAuth';
 import { useUserSubscription } from '../common/firebase/useUserSubscription';
 import { BottomTabBar } from '../common/widgets/BottomTabBar';
 import { ExtractResultScreen } from '../modules/home/view/ExtractResultScreen';
@@ -13,9 +18,10 @@ import { SettingsLoginScreen } from '../modules/settings/view/SettingsLoginScree
 import { SettingsScreen } from '../modules/settings/view/SettingsScreen';
 import { SettingsSignupScreen } from '../modules/settings/view/SettingsSignupScreen';
 import { SettingsSubscriptionScreen } from '../modules/settings/view/SettingsSubscriptionScreen';
+import { colors } from '../common/theme/colors';
 import { SplashScreen } from '../modules/splash/view/SplashScreen';
+import { View } from 'react-native';
 
-const SPLASH_DURATION_MS = 1800;
 type RootStackParamList = {
   MainTabs: undefined;
   ExtractResult: {
@@ -32,7 +38,12 @@ type RootStackParamList = {
 };
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const MainTabsRoute = ({ navigation }: NativeStackScreenProps<RootStackParamList, 'MainTabs'>) => {
+type MainTabsRouteProps = NativeStackScreenProps<RootStackParamList, 'MainTabs'> & {
+  pendingDeepLinkUrl?: string | null;
+  onPendingDeepLinkHandled?: () => void;
+};
+
+const MainTabsRoute = ({ navigation, pendingDeepLinkUrl, onPendingDeepLinkHandled }: MainTabsRouteProps) => {
   const [activeTab, setActiveTab] = useState<AppTab>('Home');
 
   let screenContent: React.ReactNode = null;
@@ -41,6 +52,8 @@ const MainTabsRoute = ({ navigation }: NativeStackScreenProps<RootStackParamList
       <HomeScreen
         onTabPress={setActiveTab}
         onOpenExtractResult={payload => navigation.push('ExtractResult', payload)}
+        pendingDeepLinkUrl={pendingDeepLinkUrl}
+        onPendingDeepLinkHandled={onPendingDeepLinkHandled}
       />
     );
   } else if (activeTab === 'Downloads') {
@@ -229,19 +242,65 @@ const ExtractResultRoute = ({ navigation, route }: NativeStackScreenProps<RootSt
   );
 };
 
+type SplashPhase = 'checking' | 'first_time' | 'returning' | 'done';
+
 const AppRoot = () => {
-  const [showSplash, setShowSplash] = useState(true);
+  const [splashPhase, setSplashPhase] = useState<SplashPhase>('checking');
+  const { pendingDeepLink, clearPendingDeepLink } = useAppDeepLink(true);
 
   useEffect(() => {
-    const timeoutId = setTimeout(() => setShowSplash(false), SPLASH_DURATION_MS);
-    return () => clearTimeout(timeoutId);
-  }, []);
+    let active = true;
 
-  if (showSplash) {
-    return <SplashScreen />;
+    const resolveSplash = async () => {
+      if (pendingDeepLink) {
+        if (active) {
+          setSplashPhase('done');
+        }
+        return;
+      }
+
+      const completed = await hasCompletedSplashOnboarding();
+      if (!active) {
+        return;
+      }
+      setSplashPhase(completed ? 'returning' : 'first_time');
+    };
+
+    resolveSplash().catch(() => {
+      if (active) {
+        setSplashPhase('first_time');
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [pendingDeepLink]);
+
+  const finishSplash = () => setSplashPhase('done');
+
+  const onFirstTimeContinue = async () => {
+    await markSplashOnboardingComplete();
+    finishSplash();
+  };
+
+  if (splashPhase === 'checking') {
+    return <View style={{ flex: 1, backgroundColor: colors.lightCanvas }} />;
   }
 
+  if (splashPhase === 'first_time' || splashPhase === 'returning') {
+    return (
+      <SplashScreen
+        showOnboarding={splashPhase === 'first_time'}
+        onContinue={splashPhase === 'first_time' ? onFirstTimeContinue : finishSplash}
+      />
+    );
+  }
+
+  const pendingDeepLinkUrl = pendingDeepLink?.mediaUrl ?? null;
+
   return (
+    <FirebaseAuthProvider>
     <NavigationContainer>
       <Stack.Navigator
         initialRouteName="MainTabs"
@@ -252,7 +311,15 @@ const AppRoot = () => {
           fullScreenGestureEnabled: true,
         }}
       >
-        <Stack.Screen name="MainTabs" component={MainTabsRoute} />
+        <Stack.Screen name="MainTabs">
+          {props => (
+            <MainTabsRoute
+              {...props}
+              pendingDeepLinkUrl={pendingDeepLinkUrl}
+              onPendingDeepLinkHandled={clearPendingDeepLink}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="ExtractResult" component={ExtractResultRoute} />
         <Stack.Screen name="SettingsLogin" component={SettingsLoginRoute} />
         <Stack.Screen name="SettingsSignup" component={SettingsSignupRoute} />
@@ -260,6 +327,7 @@ const AppRoot = () => {
         <Stack.Screen name="SettingsEditProfile" component={SettingsEditProfileRoute} />
       </Stack.Navigator>
     </NavigationContainer>
+    </FirebaseAuthProvider>
   );
 };
 

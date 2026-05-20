@@ -5,8 +5,15 @@ export const useSplashViewModel = () =>
   useMemo(
     () => ({
       title: splashModel.title,
+      trustBadge: splashModel.trustBadge,
+      headline: splashModel.headline,
       subtitle: splashModel.subtitle,
-      progress: splashModel.progress,
+      ctaLabel: splashModel.ctaLabel,
+      footerNote: splashModel.footerNote,
+      ratingLabel: splashModel.ratingLabel,
+      ratingSub: splashModel.ratingSub,
+      trustPoints: splashModel.trustPoints,
+      platforms: splashModel.platforms,
     }),
     [],
   );

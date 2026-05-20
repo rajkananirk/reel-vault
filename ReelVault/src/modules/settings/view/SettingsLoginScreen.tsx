@@ -7,6 +7,7 @@ import { colors } from '../../../common/theme/colors';
 import { moderateScale, scale, verticalScale } from '../../../common/utils/responsive';
 import { AppHeader } from '../../../common/widgets/AppHeader';
 import { GlassCard } from '../../../common/widgets/GlassCard';
+import { InstaGradientBackdrop } from '../../../common/widgets/InstaGradientBackdrop';
 
 type SettingsLoginScreenProps = {
   email: string;
@@ -33,14 +34,13 @@ export const SettingsLoginScreen = ({
 }: SettingsLoginScreenProps) => {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-      <View style={[styles.glow, styles.glowTop]} />
-      <View style={[styles.glow, styles.glowBottom]} />
+      <StatusBar barStyle="dark-content" />
+      <InstaGradientBackdrop variant="light" />
       <View style={styles.content}>
-        <AppHeader title="Login" showBack onBack={onBack} />
+        <AppHeader title="Login" tone="light" showBack onBack={onBack} />
         <GlassCard style={styles.heroCard}>
           <View style={styles.heroIconWrap}>
-            <Ionicons name="sparkles" size={moderateScale(16)} color="#D9EEFF" />
+            <Ionicons name="sparkles" size={moderateScale(16)} color={colors.primaryStrong} />
           </View>
           <Text style={styles.heroTitle}>Welcome Back</Text>
           <Text style={styles.heroSubtitle}>
@@ -59,7 +59,7 @@ export const SettingsLoginScreen = ({
               placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
-              placeholderTextColor={colors.textDim}
+              placeholderTextColor={colors.textDimOnLight}
               style={styles.input}
             />
           </View>
@@ -71,7 +71,7 @@ export const SettingsLoginScreen = ({
               onChangeText={onPasswordChange}
               placeholder="Enter your password"
               secureTextEntry
-              placeholderTextColor={colors.textDim}
+              placeholderTextColor={colors.textDimOnLight}
               style={styles.input}
             />
           </View>
@@ -94,26 +94,12 @@ export const SettingsLoginScreen = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundBottom,
-  },
-  glow: {
-    position: 'absolute',
-    width: scale(290),
-    height: scale(290),
-    borderRadius: 999,
-    backgroundColor: '#153B75',
-    opacity: 0.14,
-  },
-  glowTop: {
-    top: -scale(140),
-    right: -scale(70),
-  },
-  glowBottom: {
-    bottom: -scale(170),
-    left: -scale(80),
+    backgroundColor: colors.lightCanvas,
+    overflow: 'hidden',
   },
   content: {
     flex: 1,
+    zIndex: 1,
     paddingHorizontal: scale(18),
     paddingTop: verticalScale(8),
   },
@@ -122,9 +108,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(14),
     marginBottom: verticalScale(12),
-    backgroundColor: 'rgba(22, 38, 62, 0.74)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(121, 168, 235, 0.24)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   heroIconWrap: {
     width: scale(32),
@@ -132,19 +123,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(162, 208, 255, 0.55)',
+    borderColor: colors.lightBorder,
     marginBottom: verticalScale(8),
   },
   heroTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(21, 0.2),
     marginBottom: verticalScale(4),
   },
   heroSubtitle: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(18, 0.2),
@@ -153,12 +144,17 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(14),
-    backgroundColor: 'rgba(24, 36, 58, 0.72)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(121, 168, 235, 0.22)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   helper: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     marginBottom: verticalScale(12),
@@ -167,20 +163,20 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(8),
   },
   fieldLabel: {
-    color: colors.textDim,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
     marginBottom: verticalScale(6),
     letterSpacing: 0.3,
   },
   input: {
-    backgroundColor: 'rgba(18, 30, 50, 0.9)',
+    backgroundColor: colors.inputSurfaceLight,
     borderWidth: 1,
-    borderColor: 'rgba(117, 154, 204, 0.3)',
+    borderColor: colors.lightBorderStrong,
     borderRadius: 12,
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(11),
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.medium,
   },
   error: {
@@ -200,7 +196,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: scale(7),
     backgroundColor: colors.primaryStrong,
-    shadowColor: '#2E7BFF',
+    shadowColor: '#E1306C',
     shadowOpacity: 0.3,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },

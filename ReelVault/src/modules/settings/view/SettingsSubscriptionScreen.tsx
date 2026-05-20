@@ -6,6 +6,7 @@ import { fontFamily } from '../../../common/fonts/font';
 import { colors } from '../../../common/theme/colors';
 import { moderateScale, scale, verticalScale } from '../../../common/utils/responsive';
 import { GlassCard } from '../../../common/widgets/GlassCard';
+import { InstaGradientBackdrop } from '../../../common/widgets/InstaGradientBackdrop';
 import { PremiumPlan } from '../../../common/firebase/useUserSubscription';
 
 type SettingsSubscriptionScreenProps = {
@@ -83,19 +84,18 @@ export const SettingsSubscriptionScreen = ({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
-      <View style={[styles.glow, styles.glowTop]} />
-      <View style={[styles.glow, styles.glowBottom]} />
+      <StatusBar barStyle="dark-content" />
+      <InstaGradientBackdrop variant="light" />
 
-      <Animated.View style={{ flex: 1, opacity: screenOpacity, transform: [{ translateY: screenTranslateY }] }}>
+      <Animated.View style={{ flex: 1, zIndex: 1, opacity: screenOpacity, transform: [{ translateY: screenTranslateY }] }}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <TouchableOpacity activeOpacity={0.85} onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={moderateScale(20)} color={colors.textStrong} />
+              <Ionicons name="close" size={moderateScale(20)} color={colors.textOnLight} />
             </TouchableOpacity>
             {/* <Text style={styles.headerTitle}>ReelVault</Text> */}
             <View style={styles.helpWrap}>
-              <Ionicons name="help-circle-outline" size={moderateScale(18)} color={colors.textMuted} />
+              <Ionicons name="help-circle-outline" size={moderateScale(18)} color={colors.textMutedOnLight} />
             </View>
           </View>
 
@@ -114,7 +114,7 @@ export const SettingsSubscriptionScreen = ({
             <GlassCard style={styles.activePlanCard}>
               <View style={styles.activePlanRow}>
                 <View style={styles.activePlanBadge}>
-                  <Ionicons name="sparkles" size={moderateScale(13)} color="#EAF7FF" />
+                  <Ionicons name="sparkles" size={moderateScale(13)} color={colors.primaryStrong} />
                   <Text style={styles.activePlanBadgeText}>Pro Active</Text>
                 </View>
                 <Text style={styles.activePlanText}>
@@ -166,7 +166,7 @@ export const SettingsSubscriptionScreen = ({
             {selectedFeatures.map(item => (
               <View key={item} style={styles.featureRow}>
                 <View style={styles.featureIconWrap}>
-                  <Ionicons name="checkmark" size={moderateScale(12)} color={colors.textStrong} />
+                  <Ionicons name="checkmark" size={moderateScale(12)} color={colors.primaryStrong} />
                 </View>
                 <Text style={styles.featureText}>{item}</Text>
               </View>
@@ -191,7 +191,7 @@ export const SettingsSubscriptionScreen = ({
                       ? 'Start Your Pro Journey'
                       : 'Continue with Monthly'}
               </Text>
-              <Ionicons name="arrow-forward" size={moderateScale(18)} color="#DDEEFF" />
+              <Ionicons name="arrow-forward" size={moderateScale(18)} color="#FFFFFF" />
             </TouchableOpacity>
           </Animated.View>
 
@@ -219,23 +219,8 @@ export const SettingsSubscriptionScreen = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundBottom,
-  },
-  glow: {
-    position: 'absolute',
-    width: scale(300),
-    height: scale(300),
-    borderRadius: 999,
-    backgroundColor: '#1B4B94',
-    opacity: 0.18,
-  },
-  glowTop: {
-    top: -scale(140),
-    right: -scale(80),
-  },
-  glowBottom: {
-    bottom: -scale(180),
-    left: -scale(80),
+    backgroundColor: colors.lightCanvas,
+    overflow: 'hidden',
   },
   content: {
     paddingHorizontal: scale(18),
@@ -253,10 +238,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 99,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: colors.lightSurfaceMuted,
   },
   headerTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(20, 0.3),
   },
@@ -266,33 +251,33 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     borderRadius: 26,
-    // paddingVertical: verticalScale(30),
     marginBottom: verticalScale(18),
-    backgroundColor: 'rgba(8, 19, 36, 0.95)',
-    borderColor: 'rgba(98, 147, 219, 0.25)',
+    backgroundColor: colors.lightSurface,
+    borderColor: colors.lightBorder,
     borderWidth: 1,
-    shadowColor: '#2D6EDB',
-    shadowOpacity: 0.24,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
   heroImage: {
     width: scale(100),
     height: scale(100),
+    borderRadius: 28,
   },
   heroIconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.heavy,
     fontSize: moderateScale(33, 0.28),
     textAlign: 'center',
   },
   subtitle: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(14, 0.2),
     textAlign: 'center',
@@ -305,14 +290,19 @@ const styles = StyleSheet.create({
   },
   planCard: {
     borderRadius: 18,
-    backgroundColor: 'rgba(20, 32, 52, 0.92)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(124, 157, 209, 0.2)',
+    borderColor: colors.lightBorder,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(13),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   planCardActive: {
     borderColor: colors.primaryStrong,
@@ -329,12 +319,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(10),
     paddingVertical: verticalScale(4),
     borderRadius: 999,
-    backgroundColor: '#2D78FF',
-    borderWidth: 1,
-    borderColor: 'rgba(173, 213, 255, 0.7)',
+    backgroundColor: colors.primaryStrong,
+    borderWidth: 0,
   },
   bestValueText: {
-    color: '#F4FAFF',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(11, 0.2),
     letterSpacing: 0.2,
@@ -345,12 +334,12 @@ const styles = StyleSheet.create({
     gap: scale(5),
   },
   planTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(20, 0.2),
   },
   planSub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(13, 0.2),
   },
@@ -358,16 +347,23 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   planPrice: {
-    color: '#DCEFFF',
+    color: colors.textOnLight,
     fontFamily: fontFamily.heavy,
     fontSize: moderateScale(30, 0.2),
   },
   featuresCard: {
     marginTop: verticalScale(14),
     borderRadius: 18,
-    backgroundColor: 'rgba(18, 29, 49, 0.92)',
+    backgroundColor: colors.lightSurface,
+    borderWidth: 1,
+    borderColor: colors.lightBorder,
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(14),
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   featureRow: {
     flexDirection: 'row',
@@ -379,12 +375,12 @@ const styles = StyleSheet.create({
     width: scale(20),
     height: scale(20),
     borderRadius: 99,
-    backgroundColor: 'rgba(124, 166, 230, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   featureText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(14, 0.2),
   },
@@ -397,23 +393,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: scale(8),
-    shadowColor: '#2E7BFF',
+    shadowColor: '#E1306C',
     shadowOpacity: 0.35,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 14,
   },
   ctaText: {
-    color: '#DDEEFF',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.2),
   },
   activePlanCard: {
     marginBottom: verticalScale(12),
     borderRadius: 14,
-    backgroundColor: 'rgba(26, 50, 82, 0.78)',
+    backgroundColor: 'rgba(225, 48, 108, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(122, 181, 255, 0.38)',
+    borderColor: 'rgba(225, 48, 108, 0.22)',
     paddingVertical: verticalScale(10),
     paddingHorizontal: scale(12),
   },
@@ -430,19 +426,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(8),
     paddingVertical: verticalScale(4),
     borderRadius: 999,
-    backgroundColor: 'rgba(62, 141, 255, 0.35)',
+    backgroundColor: 'rgba(225, 48, 108, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(173, 213, 255, 0.65)',
+    borderColor: 'rgba(225, 48, 108, 0.28)',
   },
   activePlanBadgeText: {
-    color: '#EAF7FF',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(11, 0.2),
   },
   activePlanText: {
     flex: 1,
     textAlign: 'right',
-    color: colors.textStrong,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
@@ -451,19 +447,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     minHeight: verticalScale(44),
     borderWidth: 1,
-    borderColor: 'rgba(255, 154, 154, 0.45)',
-    backgroundColor: 'rgba(83, 26, 37, 0.35)',
+    borderColor: 'rgba(225, 48, 108, 0.35)',
+    backgroundColor: colors.lightSurface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelPlanText: {
-    color: '#FFB7B7',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(14, 0.2),
   },
   errorText: {
     marginTop: verticalScale(8),
-    color: '#FF8A8A',
+    color: colors.primaryStrong,
     textAlign: 'center',
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
@@ -471,7 +467,7 @@ const styles = StyleSheet.create({
   footerText: {
     marginTop: verticalScale(10),
     textAlign: 'center',
-    color: colors.textDim,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
@@ -483,19 +479,19 @@ const styles = StyleSheet.create({
     gap: scale(10),
   },
   legalText: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
   legalDivider: {
-    color: colors.textDim,
+    color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
   copyrightText: {
     marginTop: verticalScale(8),
     textAlign: 'center',
-    color: colors.textDim,
+    color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(11, 0.2),
   },

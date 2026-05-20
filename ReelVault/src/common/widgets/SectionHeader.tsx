@@ -7,11 +7,12 @@ import { moderateScale, scale } from '../utils/responsive';
 type SectionHeaderProps = {
   title: string;
   actionLabel?: string;
+  tone?: 'light' | 'dark';
 };
 
-export const SectionHeader = ({ title, actionLabel }: SectionHeaderProps) => (
+export const SectionHeader = ({ title, actionLabel, tone = 'light' }: SectionHeaderProps) => (
   <View style={styles.container}>
-    <Text style={styles.title}>{title}</Text>
+    <Text style={[styles.title, tone === 'light' && styles.titleLight]}>{title}</Text>
     {actionLabel ? (
       <TouchableOpacity activeOpacity={0.8}>
         <Text style={styles.action}>{actionLabel}</Text>
@@ -31,6 +32,9 @@ const styles = StyleSheet.create({
     color: colors.textStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.35),
+  },
+  titleLight: {
+    color: colors.textOnLight,
   },
   action: {
     color: colors.primary,

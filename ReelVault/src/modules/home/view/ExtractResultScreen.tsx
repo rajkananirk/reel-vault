@@ -10,8 +10,10 @@ import { fontFamily } from '../../../common/fonts/font';
 import { colors } from '../../../common/theme/colors';
 import { moderateScale, scale, verticalScale } from '../../../common/utils/responsive';
 import { appendSavedDownload, syncSavedDownloadToCloud } from '../../../common/storage/downloadHistory';
+import { getAsyncStorageItem } from '../../../common/storage/asyncStorage';
 import { AppHeader } from '../../../common/widgets/AppHeader';
 import { GlassCard } from '../../../common/widgets/GlassCard';
+import { InstaGradientBackdrop } from '../../../common/widgets/InstaGradientBackdrop';
 
 type ExtractResultScreenProps = {
   sourceUrl: string;
@@ -68,23 +70,6 @@ const getPlatformThumbnail = (platformName: string) => {
   return 'https://images.unsplash.com/photo-1526947425960-945c6e72858f?auto=format&fit=crop&w=1200&q=80';
 };
 
-type StorageLike = {
-  getItem: (key: string) => Promise<string | null>;
-};
-
-const getStorage = (): StorageLike | null => {
-  try {
-    const asyncStorageModule = require('@react-native-async-storage/async-storage');
-    const storage = asyncStorageModule?.default ?? asyncStorageModule;
-    if (storage?.getItem) {
-      return storage as StorageLike;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 const normalizeSaveErrorMessage = (error: unknown) => {
   const fallback = 'Failed to save video. Please try again.';
   const message = error instanceof Error ? error.message : String(error || '');
@@ -118,8 +103,7 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
 
   useEffect(() => {
     const loadPreferredQuality = async () => {
-      const storage = getStorage();
-      const savedSetting = await storage?.getItem(QUALITY_SELECTION_STORAGE_KEY);
+      const savedSetting = await getAsyncStorageItem(QUALITY_SELECTION_STORAGE_KEY);
       if (savedSetting === 'ask' || savedSetting === 'best' || savedSetting === 'high' || savedSetting === 'dataSaver') {
         setPreferredQuality(savedSetting);
       }
@@ -128,17 +112,28 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
   }, []);
 
   useEffect(() => {
+    if (!displayThumbnail?.trim()) {
+      setThumbnailAspectRatio(9 / 16);
+      return;
+    }
+    let active = true;
     Image.getSize(
       displayThumbnail,
       (imgWidth, imgHeight) => {
-        if (imgWidth > 0 && imgHeight > 0) {
-          setThumbnailAspectRatio(imgWidth / imgHeight);
+        if (!active || imgWidth <= 0 || imgHeight <= 0) {
+          return;
         }
+        setThumbnailAspectRatio(imgWidth / imgHeight);
       },
       () => {
-        setThumbnailAspectRatio(9 / 16);
+        if (active) {
+          setThumbnailAspectRatio(9 / 16);
+        }
       },
     );
+    return () => {
+      active = false;
+    };
   }, [displayThumbnail]);
 
   useEffect(() => {
@@ -227,11 +222,20 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
     await saveAll(quality);
   };
 
+  const openSourceLink = async () => {
+    try {
+      await Linking.openURL(sourceUrl);
+    } catch {
+      setSaveError('Unable to open source link.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" />
+      <InstaGradientBackdrop variant="light" />
       <View style={styles.content}>
-        <AppHeader title="Result" showBack onBack={onBack} />
+        <AppHeader title="Result" showBack onBack={onBack} tone="light" />
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -254,26 +258,26 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
             <Text style={styles.value}>{title}</Text>
 
             {platformName === 'Instagram' ? (
-              <TouchableOpacity activeOpacity={0.85} style={styles.actionButton} onPress={() => Linking.openURL(sourceUrl)}>
-                <Ionicons name="logo-instagram" size={moderateScale(18)} color="red" />
-                <Text style={styles.actionButtonText}>Follow {title}</Text>
+              <TouchableOpacity activeOpacity={0.85} style={[styles.actionButton, styles.actionButtonInstagram]} onPress={openSourceLink}>
+                <Ionicons name="logo-instagram" size={moderateScale(18)} color="#FFFFFF" />
+                <Text style={styles.actionButtonTextLight}>Open on Instagram</Text>
               </TouchableOpacity>
             ) : platformName === 'Facebook' ? (
-              <TouchableOpacity activeOpacity={0.85} style={[styles.actionButton, { backgroundColor: 'blue' }]} onPress={() => Linking.openURL(sourceUrl)}>
-                <Ionicons name="logo-facebook" size={moderateScale(18)} color="white" />
-                <Text style={[styles.actionButtonText, { color: 'white' }]}>Follow on Facebook</Text>
+              <TouchableOpacity activeOpacity={0.85} style={[styles.actionButton, styles.actionButtonFacebook]} onPress={openSourceLink}>
+                <Ionicons name="logo-facebook" size={moderateScale(18)} color="#FFFFFF" />
+                <Text style={styles.actionButtonTextLight}>Open on Facebook</Text>
               </TouchableOpacity>
             ) : platformName === 'YouTube' ? (
-              <TouchableOpacity activeOpacity={0.85} style={styles.actionButton} onPress={() => Linking.openURL(sourceUrl)}>
-                <Ionicons name="logo-youtube" size={moderateScale(18)} color="red" />
-                <Text style={styles.actionButtonText}>See On YouTube</Text>
+              <TouchableOpacity activeOpacity={0.85} style={[styles.actionButton, styles.actionButtonYoutube]} onPress={openSourceLink}>
+                <Ionicons name="logo-youtube" size={moderateScale(18)} color="#FFFFFF" />
+                <Text style={styles.actionButtonTextLight}>Open on YouTube</Text>
               </TouchableOpacity>
             ) : null}
 
             <View style={styles.saveSection}>
               <TouchableOpacity activeOpacity={0.85} style={styles.saveButton} onPress={onPressSave} disabled={saving}>
-                <Ionicons name="download" size={moderateScale(16)} color={colors.textStrong} />
-                <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save'}</Text>
+                <Ionicons name="download" size={moderateScale(16)} color="#FFFFFF" />
+                <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Save Video'}</Text>
               </TouchableOpacity>
 
               {saveMessage ? <Text style={styles.successText}>{saveMessage}</Text> : null}
@@ -295,13 +299,13 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
                   key={option.id}
                   activeOpacity={0.85}
                   style={styles.optionItem}
-                  onPress={async () => {
+                  onPress={() => {
                     setShowQualityPicker(false);
-                    await saveAll(option.value);
+                    saveAll(option.value).catch(() => undefined);
                   }}
                 >
                   <Text style={styles.optionText}>{option.label}</Text>
-                  <Ionicons name="chevron-forward" size={moderateScale(16)} color={colors.textMuted} />
+                  <Ionicons name="chevron-forward" size={moderateScale(16)} color={colors.textDimOnLight} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -316,7 +320,7 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
         <View style={styles.successOverlay}>
           <View style={styles.successCard}>
             <View style={styles.successIconWrap}>
-              <Ionicons name="checkmark" size={moderateScale(28)} color="#EAF6FF" />
+              <Ionicons name="checkmark" size={moderateScale(28)} color="#FFFFFF" />
             </View>
             <Text style={styles.successTitle}>Download Complete</Text>
             <Text style={styles.successSubtitle}>
@@ -333,10 +337,12 @@ export const ExtractResultScreen = ({ sourceUrl, title, videoUrl, platformName, 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundBottom,
+    backgroundColor: colors.lightCanvas,
+    overflow: 'hidden',
   },
   content: {
     flex: 1,
+    zIndex: 1,
     paddingHorizontal: scale(18),
     paddingTop: verticalScale(8),
   },
@@ -350,15 +356,20 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: scale(14),
     paddingVertical: verticalScale(14),
-    backgroundColor: 'rgba(24, 36, 58, 0.75)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(121, 168, 235, 0.24)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   thumbnailWrap: {
     borderRadius: 14,
-    backgroundColor: 'rgba(29, 48, 77, 0.62)',
+    backgroundColor: colors.inputSurfaceLight,
     borderWidth: 1,
-    borderColor: 'rgba(124, 167, 228, 0.25)',
+    borderColor: colors.lightBorder,
     marginBottom: verticalScale(10),
     overflow: 'hidden',
   },
@@ -372,63 +383,67 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(12),
   },
   statusText: {
-    color: colors.textStrong,
+    flex: 1,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   label: {
-    color: colors.textDim,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
     marginTop: verticalScale(8),
     marginBottom: verticalScale(4),
   },
   value: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(16, 0.2),
-  },
-  subtleText: {
-    color: colors.textMuted,
-    fontFamily: fontFamily.medium,
-    fontSize: moderateScale(12, 0.2),
-    lineHeight: moderateScale(17, 0.2),
-    marginTop: verticalScale(8),
-  },
-  platformText: {
-    color: colors.textMuted,
-    fontFamily: fontFamily.medium,
-    fontSize: moderateScale(12, 0.2),
-    marginTop: verticalScale(4),
   },
   actionButton: {
     marginTop: verticalScale(14),
     minHeight: verticalScale(46),
     borderRadius: 14,
-    backgroundColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: scale(8),
   },
+  actionButtonInstagram: {
+    backgroundColor: '#E1306C',
+  },
+  actionButtonFacebook: {
+    backgroundColor: '#1877F2',
+  },
+  actionButtonYoutube: {
+    backgroundColor: '#FF0000',
+  },
+  actionButtonTextLight: {
+    color: '#FFFFFF',
+    fontFamily: fontFamily.bold,
+    fontSize: moderateScale(14, 0.2),
+  },
   saveButton: {
-    minHeight: verticalScale(44),
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.28)',
-    backgroundColor: 'rgba(55, 72, 101, 0.35)',
+    minHeight: verticalScale(48),
+    borderRadius: 14,
+    backgroundColor: colors.primaryStrong,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: scale(8),
+    shadowColor: '#E1306C',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
   },
   saveSection: {
     marginTop: verticalScale(22),
   },
   saveButtonText: {
-    color: colors.textStrong,
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
-    fontSize: moderateScale(13, 0.2),
+    fontSize: moderateScale(14, 0.2),
   },
   successText: {
     marginTop: verticalScale(8),
@@ -438,25 +453,13 @@ const styles = StyleSheet.create({
   },
   errorText: {
     marginTop: verticalScale(8),
-    color: '#FF8A8A',
-    fontFamily: fontFamily.medium,
-    fontSize: moderateScale(12, 0.2),
-  },
-  sourceLinkButton: {
-    marginTop: verticalScale(10),
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(6),
-  },
-  sourceLinkText: {
-    color: colors.textDim,
+    color: colors.primaryStrong,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.72)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(18),
@@ -466,18 +469,23 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: scale(16),
     paddingVertical: verticalScale(16),
-    backgroundColor: 'rgba(16, 28, 48, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(123, 166, 232, 0.28)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   modalTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.2),
   },
   modalSubtitle: {
     marginTop: verticalScale(4),
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(17, 0.2),
@@ -489,8 +497,8 @@ const styles = StyleSheet.create({
   optionItem: {
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.22)',
-    backgroundColor: 'rgba(55, 72, 101, 0.25)',
+    borderColor: colors.lightBorder,
+    backgroundColor: colors.lightSurfaceMuted,
     paddingHorizontal: scale(12),
     paddingVertical: verticalScale(10),
     flexDirection: 'row',
@@ -498,7 +506,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   optionText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -509,22 +517,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.28)',
-    backgroundColor: 'rgba(55, 72, 101, 0.35)',
+    borderColor: colors.lightBorderStrong,
+    backgroundColor: colors.lightSurfaceMuted,
   },
   cancelText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
-  actionButtonText: {
-    color: 'red',
-    fontFamily: fontFamily.bold,
-    fontSize: moderateScale(14, 0.2),
-  },
   successOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.74)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(24),
@@ -535,9 +538,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(20),
     paddingVertical: verticalScale(22),
     alignItems: 'center',
-    backgroundColor: 'rgba(12, 24, 42, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(123, 166, 232, 0.34)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   successIconWrap: {
     width: scale(64),
@@ -545,20 +553,18 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(35, 165, 110, 0.42)',
-    borderWidth: 1,
-    borderColor: 'rgba(163, 241, 203, 0.55)',
+    backgroundColor: colors.success,
   },
   successTitle: {
     marginTop: verticalScale(12),
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(18, 0.2),
     textAlign: 'center',
   },
   successSubtitle: {
     marginTop: verticalScale(6),
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(18, 0.2),
@@ -566,7 +572,7 @@ const styles = StyleSheet.create({
   },
   successFootnote: {
     marginTop: verticalScale(10),
-    color: colors.primary,
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
     textAlign: 'center',

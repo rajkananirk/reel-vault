@@ -9,9 +9,8 @@ import {
   Linking,
   Modal,
   NativeModules,
-  Platform,
-  Share,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -30,8 +29,15 @@ import { fontFamily } from '../../../common/fonts/font';
 import { colors } from '../../../common/theme/colors';
 import { moderateScale, scale, verticalScale } from '../../../common/utils/responsive';
 import { GlassCard } from '../../../common/widgets/GlassCard';
+import { InstaGradientBackdrop } from '../../../common/widgets/InstaGradientBackdrop';
 import { SectionHeader } from '../../../common/widgets/SectionHeader';
 import { AppHeader } from '../../../common/widgets/AppHeader';
+import { canReadClipboardForDetect, setClipboardPasteDeclined } from '../../../common/storage/clipboardSettings';
+import {
+  extractSupportedVideoUrl,
+  isSupportedSourceUrl,
+} from '../../../common/utils/supportedVideoUrl';
+import { shareAppPromo } from '../../../common/utils/shareApp';
 import { useHomeViewModel } from '../viewmodel/useHomeViewModel';
 
 type HomeScreenProps = {
@@ -43,6 +49,8 @@ type HomeScreenProps = {
     platformName: string;
     thumbnailUrl?: string | null;
   }) => void;
+  pendingDeepLinkUrl?: string | null;
+  onPendingDeepLinkHandled?: () => void;
 };
 
 type ExtractApiSuccess = {
@@ -58,7 +66,7 @@ type ExtractApiError = {
 };
 
 const resolveApiBaseUrl = () => {
-  const fallback = 'http://192.168.1.10:8000';
+  const fallback = 'http://192.168.1.6:8000';
   try {
     const scriptURL = NativeModules?.SourceCode?.scriptURL as string | undefined;
     if (!scriptURL) {
@@ -79,13 +87,10 @@ const EXTRACT_API_URL = `${resolveApiBaseUrl()}/extract`;
 const EXTRACT_REQUEST_TIMEOUT_MS = 18000;
 const LOADER_CHIP_STEP = scale(44);
 const LOADER_PLATFORM_ICONS: Array<{ id: string; icon: React.ComponentProps<typeof Ionicons>['name']; tint: string }> = [
-  { id: 'instagram', icon: 'logo-instagram', tint: '#FF7B55' },
-  { id: 'facebook', icon: 'logo-facebook', tint: '#4A8BFF' },
-  { id: 'youtube', icon: 'logo-youtube', tint: '#FF4D4D' },
+  { id: 'instagram', icon: 'logo-instagram', tint: '#E1306C' },
+  { id: 'facebook', icon: 'logo-facebook', tint: '#1877F2' },
+  { id: 'youtube', icon: 'logo-youtube', tint: '#FF0000' },
 ];
-const APP_PROMO_MESSAGE =
-  'I am using ReelVault to save videos from Instagram, Facebook, and YouTube with one tap. Try ReelVault for fast downloads and premium history sync.';
-
 const getUserDisplayName = (displayName?: string | null, email?: string | null) => {
   if (displayName?.trim()) {
     return displayName.trim();
@@ -93,9 +98,17 @@ const getUserDisplayName = (displayName?: string | null, email?: string | null) 
   return email?.split('@')[0] ?? 'User';
 };
 
-const getInitial = (value: string) => {
-  const normalized = value.trim();
-  return (normalized[0] ?? 'U').toUpperCase();
+const getInitials = (value: string) => {
+  const parts = value
+    .replace(/[._-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? 'U'}${parts[1]?.[0] ?? ''}`.toUpperCase();
+  }
+  const single = parts[0] ?? 'User';
+  return single.slice(0, 2).toUpperCase();
 };
 
 const getPlatformName = (url: string) => {
@@ -107,25 +120,25 @@ const getPlatformName = (url: string) => {
   return 'Unknown';
 };
 
-const SUPPORTED_HOSTS = ['instagram.com', 'facebook.com', 'youtube.com', 'youtu.be'];
-
-const isSupportedSourceUrl = (rawUrl: string) => {
-  try {
-    const parsed = new URL(rawUrl);
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    return SUPPORTED_HOSTS.some(domain => host === domain || host.endsWith(`.${domain}`));
-  } catch {
-    return false;
-  }
+const isClipboardPermissionError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  const lowered = message.toLowerCase();
+  return (
+    lowered.includes('paste') ||
+    lowered.includes('clipboard') ||
+    lowered.includes('permission') ||
+    lowered.includes('denied') ||
+    lowered.includes('not allowed')
+  );
 };
 
 const getClipboardText = async (): Promise<string> => {
-  try {
-    const clipboardModule = NativeModules?.Clipboard;
-    if (!clipboardModule) {
-      return '';
-    }
+  const clipboardModule = NativeModules?.Clipboard;
+  if (!clipboardModule) {
+    return '';
+  }
 
+  try {
     if (typeof clipboardModule.getString === 'function') {
       const value = clipboardModule.getString();
       if (typeof value === 'string') {
@@ -146,7 +159,10 @@ const getClipboardText = async (): Promise<string> => {
     }
 
     return '';
-  } catch {
+  } catch (error) {
+    if (isClipboardPermissionError(error)) {
+      await setClipboardPasteDeclined(true);
+    }
     return '';
   }
 };
@@ -174,12 +190,12 @@ const clearClipboardText = async (): Promise<void> => {
   }
 };
 
-export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps) => {
+export const HomeScreen = ({ onTabPress, onOpenExtractResult, pendingDeepLinkUrl, onPendingDeepLinkHandled }: HomeScreenProps) => {
   const vm = useHomeViewModel();
   const authVm = useFirebaseAuth();
   const subscriptionVm = useUserSubscription(authVm.user?.uid);
   const displayName = getUserDisplayName(authVm.user?.displayName, authVm.user?.email);
-  const userInitial = getInitial(displayName);
+  const userInitials = getInitials(displayName);
   const { width } = useWindowDimensions();
   const platformCardWidth = (width - scale(68)) / 3;
   const recentPreviewItems = vm.recents.slice(0, 4);
@@ -198,6 +214,24 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
   const [quickDetectUrl, setQuickDetectUrl] = React.useState('');
   const lastQuickPromptedUrlRef = useRef('');
   const lastClipboardValueRef = useRef('');
+  const isMountedRef = useRef(true);
+  const quickDetectInFlightRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pendingDeepLinkUrl?.trim()) {
+      return;
+    }
+    const supportedUrl = extractSupportedVideoUrl(pendingDeepLinkUrl) ?? pendingDeepLinkUrl.trim();
+    vm.setUrl(supportedUrl);
+    onPendingDeepLinkHandled?.();
+  }, [pendingDeepLinkUrl, onPendingDeepLinkHandled, vm]);
 
   useEffect(() => {
     Animated.parallel([
@@ -254,55 +288,93 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
     React.useCallback(() => {
       vm.reloadHistory?.();
       return undefined;
-    }, [vm]),
+    }, [vm.reloadHistory]),
   );
 
-  const triggerQuickDetectPrompt = React.useCallback(
-    (candidateUrl: string) => {
-      const trimmed = candidateUrl.trim();
-      if (!trimmed || !isSupportedSourceUrl(trimmed)) {
+  const triggerQuickDetectPrompt = React.useCallback((supportedUrl: string) => {
+    if (detecting || quickDetectInFlightRef.current) {
+      return;
+    }
+
+    if (!supportedUrl || !isSupportedSourceUrl(supportedUrl) || supportedUrl === lastQuickPromptedUrlRef.current) {
+      return;
+    }
+
+    quickDetectInFlightRef.current = true;
+    lastQuickPromptedUrlRef.current = supportedUrl;
+
+    requestAnimationFrame(() => {
+      if (!isMountedRef.current) {
+        quickDetectInFlightRef.current = false;
         return;
       }
-      vm.setUrl(trimmed);
-      if (trimmed !== lastQuickPromptedUrlRef.current) {
-        setQuickDetectUrl(trimmed);
-        setShowQuickDetectModal(true);
-        lastQuickPromptedUrlRef.current = trimmed;
-      }
-    },
-    [vm],
-  );
+      vm.setUrl(supportedUrl);
+      setQuickDetectUrl(supportedUrl);
+      setShowQuickDetectModal(true);
+      quickDetectInFlightRef.current = false;
+    });
+  }, [detecting, vm]);
 
   useFocusEffect(
     React.useCallback(() => {
-      let isMounted = true;
-      const checkClipboard = async () => {
+      let active = true;
+
+      const checkClipboardOnce = async () => {
+        if (!active || detecting || showQuickDetectModal) {
+          return;
+        }
+
+        const allowed = await canReadClipboardForDetect();
+        if (!allowed) {
+          return;
+        }
+
         try {
           const clipboardValue = (await getClipboardText())?.trim() ?? '';
-          if (!isMounted || !clipboardValue || clipboardValue === lastClipboardValueRef.current) {
+          if (!active) {
             return;
           }
+
+          if (!clipboardValue) {
+            return;
+          }
+
+          if (clipboardValue === lastClipboardValueRef.current) {
+            return;
+          }
+
           lastClipboardValueRef.current = clipboardValue;
-          triggerQuickDetectPrompt(clipboardValue);
-        } catch {
-          // Ignore clipboard read failures and keep manual input flow.
+
+          const supportedUrl = extractSupportedVideoUrl(clipboardValue);
+          if (!supportedUrl) {
+            return;
+          }
+
+          triggerQuickDetectPrompt(supportedUrl);
+        } catch (error) {
+          if (isClipboardPermissionError(error)) {
+            await setClipboardPasteDeclined(true);
+          }
         }
       };
 
-      checkClipboard().catch(() => undefined);
-      const interval = setInterval(() => {
-        checkClipboard().catch(() => undefined);
-      }, 1200);
+      const timeoutId = setTimeout(() => {
+        checkClipboardOnce().catch(() => undefined);
+      }, 500);
 
       return () => {
-        isMounted = false;
-        clearInterval(interval);
+        active = false;
+        clearTimeout(timeoutId);
       };
-    }, [triggerQuickDetectPrompt]),
+    }, [detecting, showQuickDetectModal, triggerQuickDetectPrompt]),
   );
 
   const onDetect = async () => {
-    const sourceUrl = vm.url.trim();
+    if (detecting) {
+      return;
+    }
+
+    const sourceUrl = extractSupportedVideoUrl(vm.url) ?? vm.url.trim();
     if (!sourceUrl) {
       const message = 'Please paste a URL first.';
       setDetectError(message);
@@ -311,12 +383,16 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
       return;
     }
 
-    if (!isSupportedSourceUrl(sourceUrl)) {
+    if (!sourceUrl || !isSupportedSourceUrl(sourceUrl)) {
       const message = 'Unsupported URL. Only Instagram, Facebook, and YouTube links are allowed.';
       setDetectError(message);
       setDetectErrorModalMessage(message);
       setShowDetectErrorModal(true);
       return;
+    }
+
+    if (sourceUrl !== vm.url) {
+      vm.setUrl(sourceUrl);
     }
 
     setDetecting(true);
@@ -360,17 +436,25 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
         throw new Error('No direct media URL returned from API.');
       }
 
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setShowQuickDetectModal(false);
       onOpenExtractResult({
         sourceUrl,
-        title,
-        videoUrl,
+        title: String(title).slice(0, 200),
+        videoUrl: String(videoUrl),
         platformName: getPlatformName(sourceUrl),
         thumbnailUrl: body?.thumbnail_url ?? null,
       });
-      await clearClipboardText();
+      await clearClipboardText().catch(() => undefined);
       lastClipboardValueRef.current = '';
       lastQuickPromptedUrlRef.current = '';
     } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
       const message =
         error instanceof Error && error.name === 'AbortError'
           ? 'Detection timed out. Please try again.'
@@ -389,11 +473,7 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
   };
 
   const onShareRecent = async () => {
-    await Share.share(
-      Platform.OS === 'ios'
-        ? { message: APP_PROMO_MESSAGE }
-        : { message: APP_PROMO_MESSAGE },
-    );
+    await shareAppPromo();
   };
 
   const onOpenRecentSource = async (sourceUrl?: string) => {
@@ -416,25 +496,26 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={[styles.glow, styles.glowTop]} />
-      <View style={[styles.glow, styles.glowBottom]} />
+      <StatusBar barStyle="dark-content" />
+      <InstaGradientBackdrop variant="light" />
       <Animated.ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        style={{ opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }}
+        style={{ zIndex: 1, opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }}
       >
         <AppHeader
           title={vm.appName}
+          tone="light"
           right={
             <View style={styles.avatar}>
               {authVm.user ? (
-                <Text style={styles.avatarInitial}>{userInitial}</Text>
+                <Text style={styles.avatarInitials}>{""}</Text>
               ) : (
-                <Ionicons name="person" size={moderateScale(18)} color={colors.textStrong} />
+                <Ionicons name="person" size={moderateScale(18)} color={colors.textOnLight} />
               )}
               {subscriptionVm.isPro ? (
                 <View style={styles.proBadge}>
-                  <Ionicons name="sparkles" size={moderateScale(8)} color="#EAF6FF" />
+                  <Ionicons name="sparkles" size={moderateScale(8)} color="#FFFFFF" />
                 </View>
               ) : null}
             </View>
@@ -443,7 +524,7 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
 
         <GlassCard style={styles.detectCard}>
           <View style={styles.detectInputWrap}>
-            <Ionicons name="link-outline" size={moderateScale(18)} color={colors.textMuted} style={styles.linkIcon} />
+            <Ionicons name="link-outline" size={moderateScale(18)} color={colors.textDimOnLight} style={styles.linkIcon} />
             <TextInput
               value={vm.url}
               onChangeText={text => {
@@ -454,10 +535,12 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
                 if (showDetectErrorModal) {
                   setShowDetectErrorModal(false);
                 }
-                triggerQuickDetectPrompt(text);
+                if (showQuickDetectModal) {
+                  setShowQuickDetectModal(false);
+                }
               }}
               placeholder="Paste link here..."
-              placeholderTextColor={colors.textDim}
+              placeholderTextColor={colors.textDimOnLight}
               style={styles.input}
             />
             {vm.url.trim().length > 0 ? (
@@ -468,9 +551,11 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
                   vm.setUrl('');
                   setDetectError(null);
                   setShowDetectErrorModal(false);
+                  setShowQuickDetectModal(false);
+                  lastQuickPromptedUrlRef.current = '';
                 }}
               >
-                <Ionicons name="close" size={moderateScale(16)} color={colors.textStrong} />
+                <Ionicons name="close" size={moderateScale(16)} color={colors.textOnLight} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -478,7 +563,7 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
         </GlassCard>
 
         <TouchableOpacity style={[styles.downloadButton, detecting ? styles.downloadButtonDisabled : null]} activeOpacity={0.85} disabled={detecting} onPress={onDetect}>
-          <MaterialDesignIcons name="download-outline" size={moderateScale(22)} color="#0A1C33" />
+          <MaterialDesignIcons name="download-outline" size={moderateScale(22)} color="#FFFFFF" />
           <Text style={styles.downloadButtonText}>{detecting ? 'Detecting...' : 'Download'}</Text>
         </TouchableOpacity>
 
@@ -517,11 +602,11 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
               <TouchableOpacity activeOpacity={0.85} onPress={() => onOpenRecentSource(item.sourceUrl)}>
                 {item.thumbnail ? (
                   <ImageBackground source={{ uri: item.thumbnail }} style={styles.thumb} imageStyle={styles.thumbImage}>
-                    <Ionicons name="play-circle" size={moderateScale(26)} color={colors.textStrong} />
+                    <Ionicons name="play-circle" size={moderateScale(26)} color={colors.primaryStrong} />
                   </ImageBackground>
                 ) : (
                   <View style={styles.thumb}>
-                    <Ionicons name="play-circle" size={moderateScale(26)} color={colors.textStrong} />
+                    <Ionicons name="play-circle" size={moderateScale(26)} color={colors.primaryStrong} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -534,7 +619,7 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
                 </Text>
               </View>
               <TouchableOpacity activeOpacity={0.8} onPress={onShareRecent}>
-                <Ionicons name="share-social-outline" size={moderateScale(22)} color={colors.textMuted} />
+                <Ionicons name="share-social-outline" size={moderateScale(22)} color={colors.textDimOnLight} />
               </TouchableOpacity>
             </GlassCard>
           ))}
@@ -584,7 +669,7 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
         <View style={styles.quickModalOverlay}>
           <View style={styles.quickModalCard}>
             <View style={styles.quickIconWrap}>
-              <Ionicons name="sparkles" size={moderateScale(20)} color="#EAF6FF" />
+              <Ionicons name="sparkles" size={moderateScale(20)} color={colors.primaryStrong} />
             </View>
             <Text style={styles.quickModalTitle}>Link Ready to Download</Text>
             <Text style={styles.quickModalSubtitle}>We found a supported link. Download and prepare this video now?</Text>
@@ -616,7 +701,7 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
         <View style={styles.errorModalOverlay}>
           <View style={styles.errorModalCard}>
             <View style={styles.errorIconWrap}>
-              <Ionicons name="alert-circle" size={moderateScale(26)} color="#FFD6D6" />
+              <Ionicons name="alert-circle" size={moderateScale(26)} color={colors.primaryStrong} />
             </View>
             <Text style={styles.errorModalTitle}>Download Failed</Text>
             <Text style={styles.errorModalMessage}>{detectErrorModalMessage}</Text>
@@ -637,54 +722,30 @@ export const HomeScreen = ({ onTabPress, onOpenExtractResult }: HomeScreenProps)
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.backgroundBottom,
-  },
-  glow: {
-    position: 'absolute',
-    width: scale(320),
-    height: scale(320),
-    borderRadius: 999,
-    backgroundColor: '#12315F',
-    opacity: 0.10,
-    borderColor: 'white',
-    borderWidth: 0.5,
-  },
-  glowTop: {
-    top: -scale(130),
-    left: -scale(40),
-  },
-  glowBottom: {
-    bottom: -scale(180),
-    right: -scale(40),
+    backgroundColor: colors.lightCanvas,
+    overflow: 'hidden',
   },
   content: {
     paddingHorizontal: scale(18),
     paddingTop: verticalScale(10),
     paddingBottom: verticalScale(45),
   },
-  bottomOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: verticalScale(90),
-    backgroundColor: 'rgba(4, 10, 23, 0.92)',
-  },
   avatar: {
     width: scale(42),
     height: scale(42),
     borderRadius: 999,
-    backgroundColor: colors.panel,
+    backgroundColor: colors.lightSurfaceMuted,
     borderWidth: 1,
-    borderColor: colors.borderSoft,
+    borderColor: colors.lightBorderStrong,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
-  avatarInitial: {
-    color: colors.textStrong,
+  avatarInitials: {
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
-    fontSize: moderateScale(15, 0.2),
+    fontSize: moderateScale(13, 0.2),
+    letterSpacing: 0.3,
   },
   proBadge: {
     position: 'absolute',
@@ -695,28 +756,28 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.9)',
+    backgroundColor: 'rgba(225, 48, 108, 0.95)',
     borderWidth: 1,
-    borderColor: '#DDF0FF',
+    borderColor: 'rgba(255, 220, 128, 0.55)',
   },
   detectCard: {
     padding: scale(10),
     borderRadius: 18,
     marginBottom: verticalScale(16),
-    backgroundColor: 'rgba(33, 50, 78, 0.32)',
-    borderColor: 'rgba(140, 178, 230, 0.26)',
+    backgroundColor: colors.lightSurface,
+    borderColor: colors.lightBorder,
     borderWidth: 1,
-    shadowColor: '#061224',
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   detectInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 14,
-    backgroundColor: colors.buttonDark,
+    backgroundColor: colors.inputSurfaceLight,
     paddingHorizontal: scale(11),
   },
   clearInputButton: {
@@ -725,22 +786,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(145, 178, 229, 0.18)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(175, 204, 246, 0.22)',
+    borderColor: colors.lightBorder,
   },
   linkIcon: {
     marginRight: scale(9),
   },
   input: {
     flex: 1,
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.regular,
     fontSize: moderateScale(16, 0.25),
     paddingVertical: verticalScale(12),
   },
   detectErrorText: {
-    color: '#FF9A9A',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     marginTop: verticalScale(8),
@@ -760,7 +821,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   downloadButtonText: {
-    color: '#0A1C33',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(20, 0.2),
     letterSpacing: 0.3,
@@ -777,14 +838,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 18,
     gap: verticalScale(10),
-    backgroundColor: 'rgba(28, 44, 70, 0.4)',
-    borderColor: 'rgba(140, 178, 230, 0.22)',
+    backgroundColor: colors.lightSurface,
+    borderColor: colors.lightBorder,
     borderWidth: 1,
-    shadowColor: '#081327',
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   platformIconWrap: {
     width: scale(44),
@@ -794,7 +855,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   platformLabel: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
@@ -804,14 +865,14 @@ const styles = StyleSheet.create({
     padding: scale(12),
     borderRadius: 18,
     marginBottom: verticalScale(12),
-    backgroundColor: 'rgba(26, 41, 66, 0.42)',
-    borderColor: 'rgba(146, 184, 238, 0.2)',
+    backgroundColor: colors.lightSurface,
+    borderColor: colors.lightBorder,
     borderWidth: 1,
-    shadowColor: '#071225',
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   emptyRecentCard: {
     borderRadius: 16,
@@ -819,9 +880,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(14),
     alignItems: 'center',
     marginBottom: verticalScale(12),
-    backgroundColor: 'rgba(24, 38, 62, 0.72)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(121, 168, 235, 0.24)',
+    borderColor: colors.lightBorder,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   emptyRecentIconWrap: {
     width: scale(48),
@@ -830,18 +896,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: verticalScale(8),
-    backgroundColor: 'rgba(62, 141, 255, 0.18)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(151, 199, 255, 0.4)',
+    borderColor: 'rgba(225, 48, 108, 0.2)',
   },
   emptyRecentTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(15, 0.2),
     marginBottom: verticalScale(4),
   },
   emptyRecentSub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     textAlign: 'center',
@@ -851,8 +917,8 @@ const styles = StyleSheet.create({
     width: scale(70),
     height: scale(70),
     borderRadius: 14,
-    backgroundColor: 'rgba(48, 73, 112, 0.3)',
-    borderColor: 'rgba(126, 170, 238, 0.2)',
+    backgroundColor: colors.inputSurfaceLight,
+    borderColor: colors.lightBorder,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -866,18 +932,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   recentTitle: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(15, 0.2),
   },
   recentSub: {
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     marginTop: verticalScale(3),
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
   },
   shareIcon: {
-    color: colors.textMuted,
+    color: colors.textDimOnLight,
     fontSize: moderateScale(20, 0.2),
     paddingHorizontal: scale(4),
   },
@@ -890,13 +956,13 @@ const styles = StyleSheet.create({
     gap: scale(6),
   },
   moreDownloadsText: {
-    color: colors.primary,
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   loaderOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.72)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(24),
@@ -906,10 +972,15 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     paddingHorizontal: scale(18),
     paddingVertical: verticalScale(22),
-    backgroundColor: 'rgba(14, 26, 44, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(126, 170, 238, 0.28)',
+    borderColor: colors.lightBorder,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 12,
   },
   loaderRing: {
     width: scale(70),
@@ -917,9 +988,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(62, 141, 255, 0.14)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(151, 199, 255, 0.35)',
+    borderColor: 'rgba(225, 48, 108, 0.2)',
   },
   loaderPlatformsRow: {
     marginTop: verticalScale(10),
@@ -933,6 +1004,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
+    backgroundColor: colors.inputSurfaceLight,
+    borderWidth: 1,
+    borderColor: colors.lightBorder,
   },
   loaderPlatformsTrack: {
     flexDirection: 'row',
@@ -944,21 +1018,21 @@ const styles = StyleSheet.create({
     width: LOADER_CHIP_STEP,
     height: scale(40),
     borderRadius: 999,
-    backgroundColor: 'rgba(144, 194, 255, 0.24)',
+    backgroundColor: 'rgba(225, 48, 108, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(220, 238, 255, 0.75)',
-    shadowColor: '#7EBCFF',
-    shadowOpacity: 0.45,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    borderColor: 'rgba(225, 48, 108, 0.22)',
+    shadowColor: '#E1306C',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   loaderEdgeShade: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     width: LOADER_CHIP_STEP,
-    backgroundColor: 'rgba(8, 14, 26, 0.62)',
+    backgroundColor: 'rgba(255, 255, 255, 0.82)',
   },
   loaderEdgeShadeLeft: {
     left: 0,
@@ -972,14 +1046,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(66, 95, 139, 0.28)',
+    backgroundColor: colors.inputSurfaceLight,
     borderWidth: 1,
-    borderColor: 'rgba(140, 183, 246, 0.26)',
+    borderColor: colors.lightBorder,
     marginRight: LOADER_CHIP_STEP - scale(34),
   },
   loaderPlatformLabel: {
     marginTop: verticalScale(8),
-    color: '#CBE3FF',
+    color: colors.primaryStrong,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(12, 0.2),
     textTransform: 'capitalize',
@@ -987,14 +1061,14 @@ const styles = StyleSheet.create({
   },
   loaderTitle: {
     marginTop: verticalScale(14),
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(17, 0.2),
     textAlign: 'center',
   },
   loaderSubtitle: {
     marginTop: verticalScale(6),
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(18, 0.2),
@@ -1002,7 +1076,7 @@ const styles = StyleSheet.create({
   },
   errorModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.74)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(24),
@@ -1013,9 +1087,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(18),
     paddingVertical: verticalScale(20),
     alignItems: 'center',
-    backgroundColor: 'rgba(22, 26, 40, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(255, 165, 165, 0.3)',
+    borderColor: 'rgba(225, 48, 108, 0.2)',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   errorIconWrap: {
     width: scale(62),
@@ -1023,19 +1102,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(226, 72, 72, 0.24)',
+    backgroundColor: 'rgba(225, 48, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 181, 181, 0.42)',
+    borderColor: 'rgba(225, 48, 108, 0.22)',
   },
   errorModalTitle: {
     marginTop: verticalScale(12),
-    color: '#FFE7E7',
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(17, 0.2),
   },
   errorModalMessage: {
     marginTop: verticalScale(8),
-    color: '#FFD3D3',
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(18, 0.2),
@@ -1052,13 +1131,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(235, 83, 83, 0.88)',
   },
   errorModalButtonText: {
-    color: '#FFF4F4',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
   quickModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(2, 8, 18, 0.76)',
+    backgroundColor: colors.modalOverlayLight,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: scale(22),
@@ -1068,10 +1147,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: scale(18),
     paddingVertical: verticalScale(20),
-    backgroundColor: 'rgba(14, 27, 46, 0.98)',
+    backgroundColor: colors.lightSurface,
     borderWidth: 1,
-    borderColor: 'rgba(124, 169, 238, 0.33)',
+    borderColor: colors.lightBorder,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
   quickIconWrap: {
     width: scale(54),
@@ -1079,20 +1163,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(66, 143, 255, 0.34)',
+    backgroundColor: 'rgba(225, 48, 108, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(170, 209, 255, 0.52)',
+    borderColor: 'rgba(225, 48, 108, 0.2)',
   },
   quickModalTitle: {
     marginTop: verticalScale(10),
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(17, 0.2),
     textAlign: 'center',
   },
   quickModalSubtitle: {
     marginTop: verticalScale(6),
-    color: colors.textMuted,
+    color: colors.textMutedOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(12, 0.2),
     lineHeight: moderateScale(17, 0.2),
@@ -1100,7 +1184,7 @@ const styles = StyleSheet.create({
   },
   quickModalUrl: {
     marginTop: verticalScale(8),
-    color: '#DDEEFF',
+    color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
     fontSize: moderateScale(11, 0.2),
     textAlign: 'center',
@@ -1118,11 +1202,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(121, 161, 214, 0.28)',
-    backgroundColor: 'rgba(55, 72, 101, 0.35)',
+    borderColor: colors.lightBorderStrong,
+    backgroundColor: colors.lightSurfaceMuted,
   },
   quickSecondaryText: {
-    color: colors.textStrong,
+    color: colors.textOnLight,
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },
@@ -1135,7 +1219,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryStrong,
   },
   quickPrimaryText: {
-    color: '#0A1C33',
+    color: '#FFFFFF',
     fontFamily: fontFamily.bold,
     fontSize: moderateScale(13, 0.2),
   },

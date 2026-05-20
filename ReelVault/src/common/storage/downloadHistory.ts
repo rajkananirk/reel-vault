@@ -1,3 +1,5 @@
+import { getAsyncStorageItem, setAsyncStorageItem } from './asyncStorage';
+
 export type SavedDownloadRecord = {
   id: string;
   title: string;
@@ -10,11 +12,6 @@ export type SavedDownloadRecord = {
 };
 
 export const SAVED_DOWNLOADS_STORAGE_KEY = 'reelvault.saved_extractions';
-
-type StorageLike = {
-  getItem: (key: string) => Promise<string | null>;
-  setItem: (key: string, value: string) => Promise<void>;
-};
 
 type FirestoreLite = {
   (): {
@@ -33,19 +30,6 @@ type FirestoreLite = {
   };
 };
 
-const getStorage = (): StorageLike | null => {
-  try {
-    const asyncStorageModule = require('@react-native-async-storage/async-storage');
-    const storage = asyncStorageModule?.default ?? asyncStorageModule;
-    if (storage?.getItem && storage?.setItem) {
-      return storage as StorageLike;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 const getFirestore = (): FirestoreLite | null => {
   try {
     const module = require('@react-native-firebase/firestore');
@@ -56,8 +40,7 @@ const getFirestore = (): FirestoreLite | null => {
 };
 
 export const loadSavedDownloads = async (): Promise<SavedDownloadRecord[]> => {
-  const storage = getStorage();
-  const raw = await storage?.getItem(SAVED_DOWNLOADS_STORAGE_KEY);
+  const raw = await getAsyncStorageItem(SAVED_DOWNLOADS_STORAGE_KEY);
   if (!raw) {
     return [];
   }
@@ -73,24 +56,17 @@ export const loadSavedDownloads = async (): Promise<SavedDownloadRecord[]> => {
 };
 
 export const appendSavedDownload = async (record: SavedDownloadRecord): Promise<SavedDownloadRecord[]> => {
-  const storage = getStorage();
-  if (!storage) {
-    return [record];
-  }
   const existing = await loadSavedDownloads();
   const deduped = existing.filter(item => item.videoUrl !== record.videoUrl);
   const next = [record, ...deduped].slice(0, 150);
-  await storage.setItem(SAVED_DOWNLOADS_STORAGE_KEY, JSON.stringify(next));
+  await setAsyncStorageItem(SAVED_DOWNLOADS_STORAGE_KEY, JSON.stringify(next));
   return next;
 };
 
 export const removeSavedDownload = async (id: string): Promise<SavedDownloadRecord[]> => {
-  const storage = getStorage();
   const existing = await loadSavedDownloads();
   const next = existing.filter(item => item.id !== id);
-  if (storage) {
-    await storage.setItem(SAVED_DOWNLOADS_STORAGE_KEY, JSON.stringify(next));
-  }
+  await setAsyncStorageItem(SAVED_DOWNLOADS_STORAGE_KEY, JSON.stringify(next));
   return next;
 };
 
@@ -114,7 +90,6 @@ export const syncSavedDownloadToCloud = async (uid: string, record: SavedDownloa
       );
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-    // Do not block local save on cloud permission/rules issues.
     if (message.includes('permission-denied') || message.includes('missing or insufficient permissions')) {
       return;
     }

@@ -24,9 +24,22 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.reelvault</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>reelvault</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSApplicationCategoryType</key>
 	<string>/Users/rajkanani/Library/Mobile Documents/com~apple~CloudDocs/Desktop/video-downloader/ReelVault/ios/ReelVault/GoogleService-Info.plist</string>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -41,6 +54,8 @@
 	<string>ReelVault saves downloaded videos to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>ReelVault needs photo library access to save your downloaded videos.</string>
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Ionicons.ttf</string>
@@ -50,8 +65,6 @@
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
