@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "163462940265",
+    "project_id": "reel-vault-46271",
+    "storage_bucket": "reel-vault-46271.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:163462940265:android:5861cb22ab4cf1311e04f8",
+        "android_client_info": {
+          "package_name": "com.reelvault"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqYkWdwfoAqySBx3rbQMayT6jBwdmVNhI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
