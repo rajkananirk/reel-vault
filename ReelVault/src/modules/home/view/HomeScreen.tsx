@@ -66,7 +66,7 @@ type ExtractApiError = {
 };
 
 const resolveApiBaseUrl = () => {
-  const fallback = 'http://192.168.1.6:8000';
+  const fallback = 'https://video-downloader-5jxb.onrender.com';
   try {
     const scriptURL = NativeModules?.SourceCode?.scriptURL as string | undefined;
     if (!scriptURL) {
