@@ -126,7 +126,6 @@ const styles = StyleSheet.create({
     color: colors.textDimOnLight,
     fontFamily: fontFamily.medium,
     letterSpacing: 0.2,
-    fontWeight: 'semibold',
     fontSize: moderateScale(12, 0.2),
   },
   activeTab: {

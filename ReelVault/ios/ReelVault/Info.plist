@@ -49,7 +49,7 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>ReelVault saves downloaded videos to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -60,6 +60,10 @@
 	<array>
 		<string>Ionicons.ttf</string>
 		<string>MaterialDesignIcons.ttf</string>
+		<string>Inter-Medium.ttf</string>
+		<string>Inter-Bold.ttf</string>
+		<string>Inter-Regular.ttf</string>
+		<string>Inter-SemiBold.ttf</string>
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>

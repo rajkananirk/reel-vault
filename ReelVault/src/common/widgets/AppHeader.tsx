@@ -86,7 +86,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: fontFamily.bold,
     letterSpacing: 0.2,
-    fontWeight: '400',
     fontSize: moderateScale(24, 0.3),
   },
   headerTitleWithLogo: {
