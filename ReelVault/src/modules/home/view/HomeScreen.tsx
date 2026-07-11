@@ -23,6 +23,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import MaterialDesignIcons from '@react-native-vector-icons/material-design-icons';
 import { AppTab } from '../../../common/constants/app';
+import { API_BASE_URL } from '../../../common/constants/app';
 import { useFirebaseAuth } from '../../../common/firebase/useFirebaseAuth';
 import { useUserSubscription } from '../../../common/firebase/useUserSubscription';
 import { fontFamily } from '../../../common/fonts/font';
@@ -66,20 +67,23 @@ type ExtractApiError = {
 };
 
 const resolveApiBaseUrl = () => {
-  const fallback = 'https://video-downloader-5jxb.onrender.com';
+  if (!__DEV__) {
+    return API_BASE_URL;
+  }
+
   try {
     const scriptURL = NativeModules?.SourceCode?.scriptURL as string | undefined;
     if (!scriptURL) {
-      return fallback;
+      return API_BASE_URL;
     }
     const hostWithPort = scriptURL.split('://')[1]?.split('/')[0];
     const host = hostWithPort?.split(':')[0];
     if (!host) {
-      return fallback;
+      return API_BASE_URL;
     }
     return `http://${host}:8000`;
   } catch {
-    return fallback;
+    return API_BASE_URL;
   }
 };
 
